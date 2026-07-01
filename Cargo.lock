@@ -3647,6 +3647,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "shisho-ids"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "shisho-mcp"
 version = "0.1.0"
 dependencies = [

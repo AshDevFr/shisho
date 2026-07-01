@@ -6,6 +6,7 @@ members = [
     "crates/shisho-config",
     "crates/shisho-crypto",
     "crates/shisho-db",
+    "crates/shisho-ids",
     "crates/shisho-mcp",
     "crates/shisho-oauth",
     "migration",
@@ -32,6 +33,7 @@ shisho-auth = { path = "crates/shisho-auth" }
 shisho-config = { path = "crates/shisho-config" }
 shisho-crypto = { path = "crates/shisho-crypto" }
 shisho-db = { path = "crates/shisho-db" }
+shisho-ids = { path = "crates/shisho-ids" }
 shisho-mcp = { path = "crates/shisho-mcp" }
 shisho-oauth = { path = "crates/shisho-oauth" }
 migration = { path = "migration" }

@@ -3970,6 +3970,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "shisho-tsundoku"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "shisho-config",
+ "shisho-ids",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

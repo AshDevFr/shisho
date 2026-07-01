@@ -1,0 +1,33 @@
+{
+  "provider": "mangabaka",
+  "hits": [
+    {
+      "externalId": "53104",
+      "title": "Witch Hat Atelier",
+      "nativeTitle": "Tongari Boushi no Atelier",
+      "kind": "manga",
+      "status": "ongoing",
+      "year": 2016,
+      "genres": ["Fantasy", "Drama"],
+      "tags": ["Magic"],
+      "totalVolumes": 13,
+      "totalChapters": null,
+      "coverUrl": "https://mangabaka.dev/covers/53104.jpg",
+      "score": 0.93
+    },
+    {
+      "externalId": "88001",
+      "title": "Witchcraft Works",
+      "nativeTitle": null,
+      "kind": "manga",
+      "status": "ended",
+      "year": 2010,
+      "genres": ["Fantasy"],
+      "tags": [],
+      "totalVolumes": 17,
+      "totalChapters": null,
+      "coverUrl": null,
+      "score": 0.41
+    }
+  ]
+}

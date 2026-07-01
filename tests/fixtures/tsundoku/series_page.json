@@ -1,0 +1,51 @@
+{
+  "items": [
+    {
+      "id": 101,
+      "canonicalTitle": "Witch Hat Atelier",
+      "genres": ["Fantasy", "Drama"],
+      "tags": ["Magic", "Award Winner"],
+      "metadataSource": "auto",
+      "lastReleaseAt": 1765230000,
+      "firstSeenAt": 1731000000,
+      "releaseCount": 13,
+      "totalVolumes": 13,
+      "totalChapters": null,
+      "highestVolume": 13.0,
+      "highestChapter": null,
+      "rating": 8.7,
+      "owned": false,
+      "codex": null
+    },
+    {
+      "id": 102,
+      "canonicalTitle": "Dungeon Meshi",
+      "genres": ["Fantasy", "Comedy"],
+      "tags": ["Cooking"],
+      "metadataSource": "auto",
+      "lastReleaseAt": 1750000000,
+      "firstSeenAt": 1731000000,
+      "releaseCount": 14,
+      "totalVolumes": 14,
+      "totalChapters": null,
+      "highestVolume": 14.0,
+      "highestChapter": null,
+      "rating": 8.9,
+      "owned": true,
+      "codex": {
+        "status": "complete",
+        "seriesUuid": "550e8400-e29b-41d4-a716-446655440003",
+        "deepLink": "https://codex.local/series/550e8400-e29b-41d4-a716-446655440003",
+        "linkKind": "auto",
+        "localMaxVolume": 14.0,
+        "localMaxChapter": null,
+        "volumesOwned": 14,
+        "syncedAt": 1765200000
+      }
+    }
+  ],
+  "page": 0,
+  "pageSize": 50,
+  "total": 2,
+  "codexSyncedAt": 1765200000
+}

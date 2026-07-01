@@ -1,0 +1,28 @@
+{
+  "id": 101,
+  "canonicalTitle": "Witch Hat Atelier",
+  "alternateTitles": ["Tongari Boushi no Atelier"],
+  "description": "Coco always dreamed of becoming a witch, believing magic was an inborn gift, until she witnesses a spell being drawn.",
+  "kind": "manga",
+  "status": "ongoing",
+  "year": 2016,
+  "genres": ["Fantasy", "Drama"],
+  "tags": ["Magic", "Award Winner"],
+  "metadataSource": "auto",
+  "metadataFetchedAt": 1765200000,
+  "rating": 8.7,
+  "totalVolumes": 13,
+  "totalChapters": null,
+  "highestVolume": 13.0,
+  "highestChapter": null,
+  "owned": false,
+  "externalIds": [
+    { "provider": "mangabaka", "externalId": "53104", "fetchedAt": 1765200000 },
+    { "provider": "mal", "externalId": "103897", "fetchedAt": 1765200000 },
+    { "provider": "weird_future_source", "externalId": "x1", "fetchedAt": 1765200000 }
+  ],
+  "codex": null,
+  "coverUrl": "https://tsundoku.local/api/v1/covers/101",
+  "firstSeenAt": 1731000000,
+  "lastReleaseAt": 1765230000
+}

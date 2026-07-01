@@ -11,6 +11,7 @@ members = [
     "crates/shisho-ids",
     "crates/shisho-mcp",
     "crates/shisho-oauth",
+    "crates/shisho-tsundoku",
     "migration",
 ]
 resolver = "2"
@@ -40,6 +41,7 @@ shisho-db = { path = "crates/shisho-db" }
 shisho-ids = { path = "crates/shisho-ids" }
 shisho-mcp = { path = "crates/shisho-mcp" }
 shisho-oauth = { path = "crates/shisho-oauth" }
+shisho-tsundoku = { path = "crates/shisho-tsundoku" }
 migration = { path = "migration" }
 
 # Runtime

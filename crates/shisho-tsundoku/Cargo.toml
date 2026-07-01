@@ -1,0 +1,21 @@
+[package]
+name = "shisho-tsundoku"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Typed reqwest client for Tsundoku (the global candidate universe)"
+
+[dependencies]
+shisho-config = { workspace = true }
+shisho-ids = { workspace = true }
+
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true, features = ["test-util"] }

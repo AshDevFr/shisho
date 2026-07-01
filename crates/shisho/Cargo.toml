@@ -24,6 +24,7 @@ shisho-auth = { workspace = true }
 shisho-config = { workspace = true }
 shisho-crypto = { workspace = true }
 shisho-db = { workspace = true }
+shisho-mangabaka = { workspace = true }
 shisho-mcp = { workspace = true }
 
 base64.workspace = true

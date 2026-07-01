@@ -3815,6 +3815,7 @@ dependencies = [
  "shisho-config",
  "shisho-crypto",
  "shisho-db",
+ "shisho-mangabaka",
  "shisho-mcp",
  "tokio",
  "tokio-util",

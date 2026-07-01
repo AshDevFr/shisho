@@ -45,6 +45,20 @@ enum Commands {
         #[command(subcommand)]
         command: McpCommands,
     },
+    /// Manage the MangaBaka offline metadata dump
+    Mangabaka {
+        #[command(subcommand)]
+        command: MangabakaCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum MangabakaCommands {
+    /// Download and ingest the offline dump (full pipeline, atomic promote)
+    Refresh {
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
+        config: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -86,6 +100,9 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Mcp { command } => match command {
             McpCommands::Stdio { config } => commands::mcp::stdio(config).await,
+        },
+        Commands::Mangabaka { command } => match command {
+            MangabakaCommands::Refresh { config } => commands::mangabaka::refresh(config).await,
         },
     }
 }

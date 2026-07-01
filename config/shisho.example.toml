@@ -105,3 +105,60 @@ key_version = 1
 #   shisho encryption rotate-kek
 # (the database is not rewritten -- only the small wrapped key in shisho.keys).
 # key_v2 = "env:SHISHO_ENCRYPTION__KEY_V2"
+
+# --- Domain backends (added by the Shisho domain port) ---
+
+[codex]
+# Base URL of the Codex instance (identity, per-user library, read state,
+# ratings). Deployment configuration, never a tool parameter. Empty = not
+# configured.
+base_url = ""
+
+[tsundoku]
+# Base URL of the Tsundoku instance (acquirable pool, coverage, provider
+# search). Empty = not configured; Shisho then runs Tier 0 (Codex + MangaBaka).
+base_url = ""
+# Instance-level admin bearer. Source it from the environment
+# (SHISHO_TSUNDOKU__ADMIN_BEARER) or a .local overlay, NOT this committed file.
+# admin_bearer = "env is preferred"
+# Add owned=false to acquirable-pool queries as a server-side bandwidth
+# pre-filter. Never the correctness gate (ownership is always anti-joined
+# against the caller's own Codex library). Enable only when Tsundoku's Codex
+# presence sweep covers this deployment's users.
+owned_prefilter = false
+
+[mangabaka]
+# The non-optional metadata backbone and discovery source. Needs at least one
+# source (dump URL or API key); otherwise boot validation fails.
+api_base_url = "https://api.mangabaka.dev"
+# API key for api.mangabaka.dev. Required when api_fallback = true. Source from
+# SHISHO_MANGABAKA__API_KEY or a .local overlay.
+# api_key = "env is preferred"
+# Published dump. Set to "" to force API-only mode (degraded: no local
+# resolution, no FTS title search).
+offline_dump_url = "https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz"
+# Wholesale dump refresh cron (seconds-first form). Empty = manual only
+# (`shisho mangabaka refresh`).
+offline_refresh_cron = "0 0 4 * * Mon"
+# A dump older than this at boot is refreshed immediately. 0 disables the check.
+offline_max_age_days = 8
+# Fall back to the live API when the dump misses. Requires api_key.
+api_fallback = true
+# How long a confirmed miss is remembered before re-resolving.
+negative_cache_ttl_days = 7
+# Per-request timeout for API calls (the dump download has its own budget).
+timeout_seconds = 30
+
+[cache]
+# In-memory stale-while-revalidate windows (seconds).
+# Per-user library snapshot (owned-ID set + read state).
+library_snapshot_ttl_secs = 900
+# Tsundoku query cache.
+tsundoku_ttl_secs = 300
+
+[sweeps]
+# In-process housekeeping schedules (seconds-first cron form).
+# Outcome-reconciliation sweep (weekly).
+reconcile_cron = "0 0 6 * * Mon"
+# Unresolvable-series scan (daily).
+unresolvable_cron = "0 30 5 * * *"

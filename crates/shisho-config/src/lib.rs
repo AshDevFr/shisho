@@ -10,7 +10,9 @@
 //! `SHISHO_SERVER__PORT=9000`, and override both files.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
 use base64::Engine;
@@ -29,6 +31,43 @@ pub struct AppConfig {
     pub app: AppSection,
     pub mcp: McpConfig,
     pub encryption: EncryptionConfig,
+    pub codex: CodexConfig,
+    pub tsundoku: TsundokuConfig,
+    pub mangabaka: MangabakaConfig,
+    pub cache: CacheConfig,
+    pub sweeps: SweepsConfig,
+}
+
+/// A string that must never appear in logs or debug output. `Debug` is
+/// redacted; read the value explicitly via [`Secret::expose`].
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
+impl From<String> for Secret {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
 }
 
 /// MCP server policy.
@@ -361,6 +400,214 @@ impl ProviderKind {
     }
 }
 
+// --- Domain backend configuration (Codex / Tsundoku / MangaBaka) ---
+
+/// Codex instance. Deployment configuration, never a tool parameter.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CodexConfig {
+    /// Base URL of the Codex instance. Empty = not configured.
+    pub base_url: String,
+}
+
+/// Tsundoku instance (the Tier 1 enhancement). Empty base URL = not
+/// configured (a Tier 0 deployment relies on Codex + MangaBaka alone).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TsundokuConfig {
+    /// Base URL of the Tsundoku instance. Empty = not configured.
+    pub base_url: String,
+    /// Instance-level admin bearer. Source from the environment
+    /// (`SHISHO_TSUNDOKU__ADMIN_BEARER`) or a `.local` overlay file, not the
+    /// committed config.
+    pub admin_bearer: Secret,
+    /// Add `owned=false` to acquirable-pool queries as a server-side
+    /// bandwidth pre-filter. Never the correctness gate: ownership is always
+    /// anti-joined against the caller's own Codex library.
+    pub owned_prefilter: bool,
+}
+
+/// MangaBaka, the non-optional metadata backbone. There is deliberately no
+/// `enabled` flag: a configuration with neither a dump URL nor an API key
+/// fails [`MangabakaConfig::validate`], because the backbone cannot exist
+/// without at least one source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MangabakaConfig {
+    /// API key for `api.mangabaka.dev`. Source from the environment
+    /// (`SHISHO_MANGABAKA__API_KEY`) or a `.local` overlay. Required when
+    /// `api_fallback = true`.
+    pub api_key: Secret,
+    pub api_base_url: String,
+    /// URL of the published `series.sqlite.tar.gz` dump. Empty = API-only
+    /// mode (degraded: no local resolution, no FTS title search).
+    pub offline_dump_url: Option<String>,
+    /// Cron (seconds-first form) for the wholesale dump refresh. Empty =
+    /// manual refresh only (`shisho mangabaka refresh`).
+    pub offline_refresh_cron: Option<String>,
+    /// A dump older than this at boot is refreshed immediately, covering
+    /// servers that were down when the cron would have fired. 0 disables the
+    /// boot-time age check.
+    pub offline_max_age_days: u32,
+    /// Fall back to the live API when the dump misses. Requires `api_key`.
+    pub api_fallback: bool,
+    /// How long a confirmed miss is remembered before re-resolving.
+    pub negative_cache_ttl_days: u32,
+    /// Per-request timeout for API calls (the dump download has its own,
+    /// much longer budget).
+    pub timeout_seconds: u64,
+}
+
+impl Default for MangabakaConfig {
+    fn default() -> Self {
+        Self {
+            api_key: Secret::default(),
+            api_base_url: "https://api.mangabaka.dev".into(),
+            offline_dump_url: Some(
+                "https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz".into(),
+            ),
+            offline_refresh_cron: Some("0 0 4 * * Mon".into()),
+            // One day past the weekly cron cadence, so a healthy schedule
+            // never trips it.
+            offline_max_age_days: 8,
+            api_fallback: true,
+            negative_cache_ttl_days: 7,
+            timeout_seconds: 30,
+        }
+    }
+}
+
+impl MangabakaConfig {
+    /// The dump URL, treating an empty string as unset (TOML has no way to
+    /// null out a defaulted Option, so `offline_dump_url = ""` is the
+    /// documented way to force API-only mode).
+    pub fn dump_url(&self) -> Option<&str> {
+        self.offline_dump_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+
+    /// The refresh cron, treating an empty string as unset (manual only).
+    pub fn refresh_cron(&self) -> Option<&str> {
+        self.offline_refresh_cron
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+
+    /// The boot-time staleness threshold; `None` when disabled (0 days).
+    pub fn dump_max_age(&self) -> Option<Duration> {
+        (self.offline_max_age_days > 0)
+            .then(|| Duration::from_secs(u64::from(self.offline_max_age_days) * 24 * 60 * 60))
+    }
+
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_seconds.max(1))
+    }
+
+    pub fn negative_cache_ttl(&self) -> Duration {
+        Duration::from_secs(u64::from(self.negative_cache_ttl_days) * 24 * 60 * 60)
+    }
+
+    /// Boot validation. The backbone is non-optional: it needs at least one
+    /// source, and `api_fallback` without a key would surface as a confusing
+    /// 401 at first request, so both are rejected loudly here. Not wired into
+    /// [`AppConfig::validate`] yet; `serve` calls it once MangaBaka is live.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.dump_url().is_none() && self.api_key.is_empty() {
+            return Err(
+                "mangabaka is the metadata backbone and needs at least one source: set \
+                 mangabaka.offline_dump_url (the published dump) or mangabaka.api_key \
+                 (SHISHO_MANGABAKA__API_KEY)"
+                    .into(),
+            );
+        }
+        if self.api_fallback && self.api_key.is_empty() {
+            return Err(
+                "mangabaka.api_fallback = true requires mangabaka.api_key (set \
+                 SHISHO_MANGABAKA__API_KEY or a .local overlay), or set \
+                 mangabaka.api_fallback = false for dump-only mode"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// SWR cache revalidation windows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CacheConfig {
+    /// Per-user library snapshot (owned-ID set + read state) revalidation.
+    pub library_snapshot_ttl_secs: u64,
+    /// Tsundoku query cache revalidation.
+    pub tsundoku_ttl_secs: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            library_snapshot_ttl_secs: 900,
+            tsundoku_ttl_secs: 300,
+        }
+    }
+}
+
+impl CacheConfig {
+    pub fn library_snapshot_ttl(&self) -> Duration {
+        Duration::from_secs(self.library_snapshot_ttl_secs)
+    }
+
+    pub fn tsundoku_ttl(&self) -> Duration {
+        Duration::from_secs(self.tsundoku_ttl_secs)
+    }
+}
+
+/// In-process housekeeping sweep schedules. Cron expressions use the
+/// seconds-first form (`sec min hour day-of-month month day-of-week`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SweepsConfig {
+    /// Outcome-reconciliation sweep (weekly by default).
+    pub reconcile_cron: String,
+    /// Unresolvable-series scan (daily by default).
+    pub unresolvable_cron: String,
+}
+
+impl Default for SweepsConfig {
+    fn default() -> Self {
+        Self {
+            reconcile_cron: "0 0 6 * * Mon".into(),
+            unresolvable_cron: "0 30 5 * * *".into(),
+        }
+    }
+}
+
+impl DatabaseConfig {
+    /// The on-disk storage directory: the SQLite file's parent for sqlite
+    /// URLs, `data/` otherwise (non-sqlite deployments still need a local
+    /// directory for the MangaBaka dump).
+    pub fn data_dir(&self) -> PathBuf {
+        if let Some(rest) = self.url.strip_prefix("sqlite://") {
+            let path = rest.split('?').next().unwrap_or(rest);
+            if let Some(parent) = Path::new(path).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                return parent.to_path_buf();
+            }
+        }
+        PathBuf::from("data")
+    }
+
+    /// Where the MangaBaka offline dump lives: `<data dir>/mangabaka/`,
+    /// beside the app database, never inside it (the one sanctioned local
+    /// dataset).
+    pub fn mangabaka_dir(&self) -> PathBuf {
+        self.data_dir().join("mangabaka")
+    }
+}
+
 /// Load configuration, applying defaults, then the base file (if present),
 /// then the sibling `.local` overlay (if present), then env vars.
 pub fn load(path: &Path) -> anyhow::Result<AppConfig> {
@@ -381,8 +628,28 @@ pub fn load(path: &Path) -> anyhow::Result<AppConfig> {
         .extract()
         .context("parsing configuration")?;
 
-    resolve_provider_secrets(&mut cfg, |var| std::env::var(var).ok())?;
+    let lookup = |var: &str| std::env::var(var).ok();
+    resolve_provider_secrets(&mut cfg, lookup)?;
+    resolve_secret(&mut cfg.tsundoku.admin_bearer, &lookup)?;
+    resolve_secret(&mut cfg.mangabaka.api_key, &lookup)?;
     Ok(cfg)
+}
+
+/// Resolve an `env:VAR_NAME` indirection in a [`Secret`] using `lookup`, so a
+/// committed config can point at an environment variable instead of carrying
+/// the value. A plain value is left untouched. Kept lookup-injectable so it is
+/// testable without mutating the process environment.
+fn resolve_secret(
+    secret: &mut Secret,
+    lookup: &impl Fn(&str) -> Option<String>,
+) -> anyhow::Result<()> {
+    let raw = secret.expose().to_owned();
+    if let Some(var) = raw.strip_prefix("env:") {
+        let value =
+            lookup(var).with_context(|| format!("a secret references unset env var {var}"))?;
+        *secret = Secret::new(value);
+    }
+    Ok(())
 }
 
 impl AppConfig {
@@ -693,5 +960,115 @@ mod tests {
         );
         // Anchorless paths have no `.local.<ext>` to derive.
         assert_eq!(local_overlay_path(Path::new("shisho")), None);
+    }
+
+    #[test]
+    fn domain_sections_apply_defaults() {
+        let cfg = load(&PathBuf::from("does-not-exist.toml")).unwrap();
+        assert!(cfg.codex.base_url.is_empty());
+        assert!(cfg.tsundoku.base_url.is_empty());
+        assert!(cfg.tsundoku.admin_bearer.is_empty());
+        assert!(!cfg.tsundoku.owned_prefilter);
+        assert_eq!(cfg.cache.library_snapshot_ttl_secs, 900);
+        assert_eq!(cfg.cache.tsundoku_ttl_secs, 300);
+        assert_eq!(cfg.mangabaka.api_base_url, "https://api.mangabaka.dev");
+        assert_eq!(
+            cfg.mangabaka.dump_url(),
+            Some("https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz")
+        );
+        assert_eq!(cfg.mangabaka.refresh_cron(), Some("0 0 4 * * Mon"));
+        assert_eq!(cfg.sweeps.reconcile_cron, "0 0 6 * * Mon");
+        assert_eq!(cfg.sweeps.unresolvable_cron, "0 30 5 * * *");
+    }
+
+    #[test]
+    fn domain_file_overrides_apply_and_merge() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("shisho.toml");
+        std::fs::write(
+            &base,
+            "[codex]\nbase_url = \"http://codex.local\"\n\n\
+             [tsundoku]\nbase_url = \"http://tsundoku.local\"\nadmin_bearer = \"from-file\"\n\n\
+             [cache]\ntsundoku_ttl_secs = 60\n",
+        )
+        .unwrap();
+        let cfg = load(&base).unwrap();
+        assert_eq!(cfg.codex.base_url, "http://codex.local");
+        assert_eq!(cfg.tsundoku.admin_bearer.expose(), "from-file");
+        // Overridden field wins; the sibling default survives.
+        assert_eq!(cfg.cache.tsundoku_ttl_secs, 60);
+        assert_eq!(cfg.cache.library_snapshot_ttl_secs, 900);
+    }
+
+    #[test]
+    fn domain_secret_env_indirection_resolves() {
+        let mut s = Secret::new("env:MY_MB_KEY");
+        resolve_secret(&mut s, &|v: &str| {
+            (v == "MY_MB_KEY").then(|| "shh".to_string())
+        })
+        .unwrap();
+        assert_eq!(s.expose(), "shh");
+
+        // A plain value is left untouched.
+        let mut plain = Secret::new("literal");
+        resolve_secret(&mut plain, &|_| None).unwrap();
+        assert_eq!(plain.expose(), "literal");
+
+        // An unset referenced var errors.
+        let mut missing = Secret::new("env:NOPE");
+        assert!(resolve_secret(&mut missing, &|_| None).is_err());
+    }
+
+    #[test]
+    fn secret_is_redacted_in_debug_output() {
+        let s = Secret::new("hunter2");
+        let debug = format!("{s:?}");
+        assert!(!debug.contains("hunter2"), "secret leaked: {debug}");
+        assert_eq!(debug, "Secret(***)");
+        assert_eq!(s.expose(), "hunter2");
+    }
+
+    #[test]
+    fn mangabaka_validate_covers_every_boot_combination() {
+        // Dump-only mode (no key, fallback off) is valid.
+        let dump_only = MangabakaConfig {
+            api_fallback: false,
+            ..Default::default()
+        };
+        dump_only.validate().expect("dump-only mode is valid");
+
+        // Default (api_fallback on, no key) must demand a key.
+        let err = MangabakaConfig::default().validate().unwrap_err();
+        assert!(err.contains("api_fallback"), "unexpected message: {err}");
+
+        // Neither source: the backbone cannot exist.
+        let nothing = MangabakaConfig {
+            offline_dump_url: Some(String::new()),
+            api_fallback: false,
+            ..Default::default()
+        };
+        let err = nothing.validate().unwrap_err();
+        assert!(err.contains("at least one source"), "got: {err}");
+        assert_eq!(nothing.dump_url(), None);
+    }
+
+    #[test]
+    fn database_data_dir_and_mangabaka_dir_derive_from_the_sqlite_url() {
+        let cfg = DatabaseConfig::default();
+        assert_eq!(cfg.data_dir(), PathBuf::from("data"));
+        assert_eq!(cfg.mangabaka_dir(), PathBuf::from("data/mangabaka"));
+
+        let nested = DatabaseConfig {
+            url: "sqlite:///var/lib/shisho/shisho.db?mode=rwc".into(),
+            max_connections: 1,
+        };
+        assert_eq!(nested.data_dir(), PathBuf::from("/var/lib/shisho"));
+
+        // Non-sqlite still gets a local directory for the dump.
+        let pg = DatabaseConfig {
+            url: "postgres://u:p@localhost/shisho".into(),
+            max_connections: 1,
+        };
+        assert_eq!(pg.data_dir(), PathBuf::from("data"));
     }
 }

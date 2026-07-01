@@ -57,6 +57,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
+      - name: Cache bucket (weekly rotation = cache TTL)
+        id: bucket
+        run: echo "week=$(date -u +%Y-%V)" >> "$GITHUB_OUTPUT"
       - name: Cache cargo + target
         uses: actions/cache@v4
         with:
@@ -66,9 +69,12 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          # The week bucket rotates the key every ISO week, so a stale or
+          # poisoned cache self-expires instead of living forever (gitea's
+          # Actions cache cannot be purged manually, go-gitea/gitea#26403).
+          key: ${{ runner.os }}-cargo-test-${{ steps.bucket.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-test-${{ steps.bucket.outputs.week }}-
       - name: Run tests
         run: cargo nextest run --workspace
 
@@ -84,6 +90,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Cache bucket (weekly rotation = cache TTL)
+        id: bucket
+        run: echo "week=$(date -u +%Y-%V)" >> "$GITHUB_OUTPUT"
       - name: Cache cargo + target
         uses: actions/cache@v4
         with:
@@ -98,9 +107,9 @@ jobs:
           # truncated crate in the registry, which then breaks clippy. Gitea's
           # cache cannot be purged (go-gitea/gitea#26403), so the only fix is a
           # fresh key prefix that never matches the poisoned entry.
-          key: ${{ runner.os }}-cargo-lint-v2-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-lint-v2-${{ steps.bucket.outputs.week }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-lint-v2-
+            ${{ runner.os }}-cargo-lint-v2-${{ steps.bucket.outputs.week }}-
       - name: Format check
         run: cargo fmt --all -- --check
       - name: Clippy check

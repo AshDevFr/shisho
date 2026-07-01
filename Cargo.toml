@@ -9,6 +9,7 @@ members = [
     "crates/shisho-crypto",
     "crates/shisho-db",
     "crates/shisho-ids",
+    "crates/shisho-mangabaka",
     "crates/shisho-mcp",
     "crates/shisho-oauth",
     "crates/shisho-tsundoku",
@@ -39,6 +40,7 @@ shisho-config = { path = "crates/shisho-config" }
 shisho-crypto = { path = "crates/shisho-crypto" }
 shisho-db = { path = "crates/shisho-db" }
 shisho-ids = { path = "crates/shisho-ids" }
+shisho-mangabaka = { path = "crates/shisho-mangabaka" }
 shisho-mcp = { path = "crates/shisho-mcp" }
 shisho-oauth = { path = "crates/shisho-oauth" }
 shisho-tsundoku = { path = "crates/shisho-tsundoku" }
@@ -127,6 +129,12 @@ mime_guess = "2"
 
 # Concurrent caches
 dashmap = "6"
+
+# MangaBaka offline dump pipeline
+flate2 = "1"
+tar = "0.4"
+sha1 = "0.11"
+opentelemetry = "0.32"
 
 # Cryptography (optional, common enough to declare once)
 # argon2 stays on 0.5: 0.6 is still a release candidate (the RustCrypto

@@ -1,0 +1,37 @@
+[package]
+name = "shisho-mangabaka"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Self-contained MangaBaka metadata provider: offline dump, API fallback, negative cache (the metadata backbone)"
+
+[dependencies]
+shisho-config = { path = "../shisho-config" }
+shisho-ids = { path = "../shisho-ids" }
+
+anyhow.workspace = true
+chrono.workspace = true
+flate2.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+opentelemetry.workspace = true
+reqwest.workspace = true
+sea-orm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros", "rt", "rt-multi-thread", "time"] }
+tracing.workspace = true
+
+[features]
+# Test-support dump fixture builder. Enabled by other crates'
+# dev-dependencies only; never part of a production build.
+test-fixtures = []
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"
+tokio = { workspace = true, features = ["test-util"] }

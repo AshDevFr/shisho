@@ -9,14 +9,18 @@ description = "Database connection, encryption key bootstrap, and migration runn
 [dependencies]
 shisho-config = { workspace = true }
 shisho-crypto = { workspace = true }
+shisho-ids = { workspace = true }
 migration = { workspace = true }
 
 sea-orm.workspace = true
 libsqlite3-sys.workspace = true
 sqlx.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+similar.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 

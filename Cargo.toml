@@ -130,6 +130,9 @@ mime_guess = "2"
 # Concurrent caches
 dashmap = "6"
 
+# Diff rendering (profile version history)
+similar = "2"
+
 # MangaBaka offline dump pipeline
 flate2 = "1"
 tar = "0.4"

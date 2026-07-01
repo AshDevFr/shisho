@@ -143,3 +143,38 @@ async fn feed_cursor_round_trip() {
         .expect("cursor exists");
     assert_eq!(cursor.cursor, "opaque-cursor-token");
 }
+
+#[tokio::test]
+async fn feed_cursor_upsert_replaces_value_and_timestamp() {
+    use sea_orm::sea_query::OnConflict;
+    let db = fresh_db().await;
+
+    async fn upsert(db: &DatabaseConnection, cursor: &str) {
+        feed_cursor::Entity::insert(feed_cursor::ActiveModel {
+            id: Set("tsundoku".into()),
+            cursor: Set(cursor.into()),
+            updated_at: Set(chrono::Utc::now().into()),
+        })
+        .on_conflict(
+            OnConflict::column(feed_cursor::Column::Id)
+                .update_columns([feed_cursor::Column::Cursor, feed_cursor::Column::UpdatedAt])
+                .to_owned(),
+        )
+        .exec(db)
+        .await
+        .expect("upsert");
+    }
+
+    upsert(&db, "cursor-1").await;
+    upsert(&db, "cursor-2").await;
+
+    let row = feed_cursor::Entity::find_by_id("tsundoku")
+        .one(&db)
+        .await
+        .expect("query")
+        .expect("row");
+    assert_eq!(row.cursor, "cursor-2", "upsert replaced the cursor value");
+    // The primary-key upsert replaces in place, never a second row.
+    let all = feed_cursor::Entity::find().all(&db).await.expect("all");
+    assert_eq!(all.len(), 1, "upsert must not create a second row");
+}

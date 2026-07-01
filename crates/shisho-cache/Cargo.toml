@@ -1,0 +1,18 @@
+[package]
+name = "shisho-cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "In-memory SWR cache primitive for shisho"
+
+[dependencies]
+chrono.workspace = true
+thiserror.workspace = true
+dashmap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+futures-util.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

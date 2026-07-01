@@ -3,6 +3,7 @@ members = [
     "crates/shisho",
     "crates/shisho-api",
     "crates/shisho-auth",
+    "crates/shisho-cache",
     "crates/shisho-config",
     "crates/shisho-crypto",
     "crates/shisho-db",
@@ -30,6 +31,7 @@ repository = "https://github.com/AshDevFr/shisho"
 # shisho-* crate declared here and consumed with `workspace = true`)
 shisho-api = { path = "crates/shisho-api" }
 shisho-auth = { path = "crates/shisho-auth" }
+shisho-cache = { path = "crates/shisho-cache" }
 shisho-config = { path = "crates/shisho-config" }
 shisho-crypto = { path = "crates/shisho-crypto" }
 shisho-db = { path = "crates/shisho-db" }

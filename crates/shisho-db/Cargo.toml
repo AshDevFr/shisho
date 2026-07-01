@@ -1,0 +1,26 @@
+[package]
+name = "shisho-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Database connection, encryption key bootstrap, and migration runner for shisho"
+
+[dependencies]
+shisho-config = { workspace = true }
+shisho-crypto = { workspace = true }
+migration = { workspace = true }
+
+sea-orm.workspace = true
+libsqlite3-sys.workspace = true
+sqlx.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+base64.workspace = true
+tokio = { workspace = true }

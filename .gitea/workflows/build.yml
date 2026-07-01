@@ -1,0 +1,185 @@
+# Gitea Actions — test, lint, and Docker build/publish
+#
+# Gitea variant of the GitHub workflows under .github/workflows. When this
+# `.gitea/workflows` directory exists, Gitea ignores `.github/workflows`
+# entirely, so the two never double-run: GitHub keeps using .github, Gitea
+# uses this file.
+#
+# Scope: Docker only. Unlike the GitHub build.yml, this does NOT run the
+# cargo-dist binary-release pipeline — on Gitea the only published artifact is
+# the container image pushed to the built-in registry.
+#
+# Notable Gitea idioms:
+#   - test/lint run inside `catthehacker/ubuntu:act-latest` for a consistent
+#     toolchain image; the docker job runs on the host runner because it needs
+#     the Docker daemon (DinD inside that container is painful).
+#   - No sccache (its GitHub release-API + Actions-cache backend don't exist on
+#     Gitea) and no mold install (mold is only wired as the linker inside the
+#     Dockerfiles, never in CI). Caching is actions/cache over cargo + target.
+#   - The registry host is derived from github.server_url (e.g. your Gitea
+#     instance host); the image is <gitea-host>/<owner>/<repo>.
+#
+# Required repo secret:
+#   REGISTRY_TOKEN — a Gitea access token with package read/write, used for the
+#   container registry login. Falls back to the auto GITHUB_TOKEN if unset, but
+#   that token often lacks registry scope, so set REGISTRY_TOKEN explicitly.
+
+name: Build
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    tags:
+      - "**[0-9]+.[0-9]+.[0-9]+*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: catthehacker/ubuntu:act-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+      - name: Run tests
+        run: cargo nextest run --workspace
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: catthehacker/ubuntu:act-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-lint-
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy check
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Build the multi-arch image (Dockerfile.cross cross-compiles arm64 on the
+  # amd64 host). On PRs it builds without pushing to validate the Dockerfile;
+  # on main/tags it logs in and pushes to Gitea's container registry.
+  docker:
+    name: Docker
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Determine build info
+        id: info
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "is-release=true" >> "$GITHUB_OUTPUT"
+            echo "publishing=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
+            echo "is-release=false" >> "$GITHUB_OUTPUT"
+            echo "publishing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is-release=false" >> "$GITHUB_OUTPUT"
+            echo "publishing=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Registry FQDN setup
+        id: registry
+        run: |
+          registry=${{ github.server_url }}
+          echo "registry=${registry##http*://}" >> "$GITHUB_OUTPUT"
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Gitea container registry
+        if: ${{ steps.info.outputs.publishing == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.registry.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Docker meta (release)
+        if: ${{ steps.info.outputs.is-release == 'true' }}
+        id: meta-release
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.registry.outputs.registry }}/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+            type=sha,prefix=sha-
+      - name: Docker meta (main)
+        if: ${{ steps.info.outputs.publishing == 'true' && steps.info.outputs.is-release == 'false' }}
+        id: meta-main
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.registry.outputs.registry }}/${{ github.repository }}
+          tags: |
+            type=raw,value=main
+            type=sha,prefix=sha-
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cross
+          # PRs validate amd64 only (fast); main/tags publish both arches.
+          platforms: ${{ steps.info.outputs.publishing == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ steps.info.outputs.publishing == 'true' }}
+          tags: ${{ steps.info.outputs.is-release == 'true' && steps.meta-release.outputs.tags || steps.info.outputs.publishing == 'true' && steps.meta-main.outputs.tags || 'shisho:pr' }}
+          labels: ${{ steps.info.outputs.is-release == 'true' && steps.meta-release.outputs.labels || steps.meta-main.outputs.labels }}
+          # No buildx cache-from/cache-to here. The GitHub workflow uses
+          # type=registry, but on Gitea both remote backends are broken:
+          #   - type=gha needs the GitHub Actions cache service; act_runner's
+          #     partial implementation corrupts buildx blobs, which surfaces as
+          #     "failed commit on ref ...: unexpected commit digest ... failed
+          #     precondition" mid-build.
+          #   - type=registry against the Gitea registry hits its own BuildKit
+          #     cache/manifest bugs (see go-gitea/gitea#28973).
+          # Instead we rely on the buildx builder's local cache, which persists
+          # across runs on a self-hosted act_runner host and gives incremental
+          # builds with no corruption risk. If your runners are ephemeral and you
+          # need a shared cache, wire up type=local backed by actions/cache.

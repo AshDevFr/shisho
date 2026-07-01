@@ -1,0 +1,38 @@
+[package]
+name = "shisho"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "shisho"
+path = "src/main.rs"
+
+[features]
+default = []
+# Embed the built `web/dist` into the binary at compile time.
+# Requires `web/dist` to exist first (run `make frontend-build`).
+# The actual embedding lives in shisho-api; this forwards to it.
+embed-frontend = ["shisho-api/embed-frontend"]
+
+[dependencies]
+shisho-api = { workspace = true }
+shisho-auth = { workspace = true }
+shisho-config = { workspace = true }
+shisho-crypto = { workspace = true }
+shisho-db = { workspace = true }
+shisho-mcp = { workspace = true }
+
+base64.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+rmcp.workspace = true
+axum.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+utoipa.workspace = true
+clap.workspace = true

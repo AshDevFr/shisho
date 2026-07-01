@@ -1,0 +1,88 @@
+# Development Dockerfile with hot reload (cargo-watch)
+
+FROM rust:1.96-alpine
+
+# perl: the SQLCipher build (libsqlite3-sys bundled-sqlcipher-vendored-openssl)
+# compiles OpenSSL from vendored source via openssl-src, which needs perl.
+RUN apk add --no-cache \
+    pkgconf \
+    openssl-dev \
+    openssl-libs-static \
+    musl-dev \
+    build-base \
+    curl \
+    libstdc++ \
+    libgcc \
+    clang \
+    mold \
+    perl \
+    nodejs \
+    npm \
+    sqlite
+
+WORKDIR /app
+
+# Pre-materialize the project's pinned toolchain so the runtime bind-mount
+# doesn't surprise rustup into re-downloading everything. The rust:*-alpine
+# base image ships the default profile; rust-toolchain.toml here asks for
+# minimal+rustfmt+clippy, and that profile mismatch alone is enough to make
+# rustup do a full component sync the first time cargo runs against the
+# bind-mounted source — which then frequently fails with a partial-download
+# rename error and leaves the toolchain in a half-installed state.
+COPY rust-toolchain.toml ./
+RUN rustup show active-toolchain || rustup toolchain install
+
+RUN cargo install cargo-watch cargo-nextest --locked
+
+# Copy only workspace manifests so the dep-cache layer survives source edits.
+# Add one COPY line per workspace crate as the project grows.
+COPY Cargo.toml Cargo.lock ./
+COPY migration/Cargo.toml ./migration/
+COPY crates/shisho/Cargo.toml ./crates/shisho/
+COPY crates/shisho-api/Cargo.toml ./crates/shisho-api/
+COPY crates/shisho-config/Cargo.toml ./crates/shisho-config/
+COPY crates/shisho-db/Cargo.toml ./crates/shisho-db/
+
+# Stub source files so the dependency layer can build
+RUN find ./crates -mindepth 1 -maxdepth 1 -type d | while read -r dir; do \
+        mkdir -p "$dir/src" && \
+        if [ -f "$dir/Cargo.toml" ] && grep -q "\[\[bin\]\]" "$dir/Cargo.toml"; then \
+            echo "fn main() {}" > "$dir/src/main.rs"; \
+        else \
+            : > "$dir/src/lib.rs"; \
+        fi; \
+    done && \
+    mkdir -p migration/src && \
+    echo "pub use sea_orm_migration::prelude::*; pub struct Migrator; impl MigratorTrait for Migrator { fn migrations() -> Vec<Box<dyn MigrationTrait>> { vec![] } }" > migration/src/lib.rs && \
+    cargo build && \
+    find ./crates -mindepth 2 -maxdepth 2 -name src -type d -exec rm -rf {} + && \
+    rm -rf migration/src && \
+    # Drop every workspace-member fingerprint so the bind-mounted real source
+    # rebuilds at container start. Each glob must cover one workspace prefix;
+    # any missed crate keeps its stub-compiled rlib in target/debug/deps/ and
+    # gets linked into the binary, surfacing as "no <Symbol> in the root".
+    #
+    # IMPORTANT: cargo's fingerprint dirs use the PACKAGE name (with dashes),
+    # not the Rust crate identifier (underscores). So a `td-config` crate
+    # lives at `target/debug/.fingerprint/td-config-<hash>/`, NOT
+    # `td_config-<hash>/`. Use `shisho-` (dashed), not
+    # `shisho_`, in this glob — the latter matches nothing
+    # and silently leaves stub rlibs linked.
+    find target/debug/.fingerprint \
+        \( -name 'shisho-*' -o -name 'shisho-*' -o -name 'migration-*' \) \
+        -prune -exec rm -rf {} + 2>/dev/null || true
+
+# The real source is bind-mounted via docker compose; cargo watch picks up changes.
+EXPOSE 8080
+
+CMD ["cargo", "watch", \
+    "-w", "Cargo.toml", \
+    "-w", "Cargo.lock", \
+    "-w", "crates/", \
+    "-w", "migration/", \
+    "-i", "web/**", \
+    "-i", ".shisho/**", \
+    "-i", "*.md", \
+    "-i", "Dockerfile*", \
+    "-i", "docker-compose*.yml", \
+    "-x", "run -- serve --config /app/config/shisho.docker.toml"]

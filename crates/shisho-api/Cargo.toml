@@ -1,0 +1,52 @@
+[package]
+name = "shisho-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "HTTP API, OpenAPI doc, and embedded SPA for shisho"
+
+[features]
+default = []
+# Embed the built `web/dist` into the binary at compile time.
+# Requires `web/dist` to exist first (run `make frontend-build`).
+embed-frontend = ["dep:rust-embed", "dep:mime_guess"]
+# Expose AppState test fixtures to other crates' tests (the MCP crate).
+test-util = ["shisho-auth/test-util", "dep:tempfile"]
+
+[dependencies]
+shisho-auth = { workspace = true }
+shisho-config = { workspace = true }
+shisho-db = { workspace = true }
+shisho-oauth = { workspace = true }
+
+axum.workspace = true
+axum-extra.workspace = true
+tower-http.workspace = true
+sea-orm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+utoipa-scalar.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+time = "0.3"
+percent-encoding = "2"
+
+rust-embed = { workspace = true, optional = true }
+mime_guess = { workspace = true, optional = true }
+tempfile = { version = "3", optional = true }
+
+[dev-dependencies]
+# Enable shisho-auth's test fixtures (seed_key, test_db, SessionKeys::for_test)
+# for this crate's own tests.
+shisho-auth = { workspace = true, features = ["test-util"] }
+tower = { workspace = true }
+http-body-util = "0.1"
+wiremock = "0.6"
+tempfile = "3"

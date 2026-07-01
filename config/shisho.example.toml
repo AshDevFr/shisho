@@ -1,0 +1,107 @@
+# shisho configuration (example).
+#
+# Copy to config/shisho.toml and edit, or point --config at any path.
+# YAML is also supported (config/shisho.yaml) if you prefer it.
+#
+# Every value can be overridden by an environment variable using the
+# SHISHO_ prefix and __ for nesting, e.g.:
+#   SHISHO_SERVER__PORT=9000
+#   SHISHO_DATABASE__URL=sqlite://data/shisho.db?mode=rwc
+
+[server]
+host = "127.0.0.1"
+port = 8080
+# Public base URL used to build OAuth redirect URIs. Defaults to
+# http://{host}:{port}; set it behind a reverse proxy or for a registered
+# OAuth callback (no trailing slash), e.g. "https://shisho.example.com".
+# public_url = "https://shisho.example.com"
+
+[database]
+# SQLite only. At-rest encryption uses SQLCipher (see [encryption]), which the
+# build links in place of plain SQLite, so there is no Postgres path.
+url = "sqlite://data/shisho.db?mode=rwc"
+max_connections = 16
+
+[auth]
+# "single_user" (one static API key, no login UI) | "multi_user" (user accounts
+# with OIDC/OAuth2 login, sessions, and per-user row scoping). multi_user
+# requires at least one [[auth.providers]] entry below.
+mode = "single_user"
+# Static API key for single_user mode. Generated and printed once on first run
+# if unset (look for the "bootstrap" key in the startup logs).
+# api_key = "shisho_..."
+# Admin allowlists. A user is an admin if their email is in admin_emails OR
+# their OIDC group claim intersects admin_groups. When BOTH are empty, the
+# first provisioned user becomes the admin. admin_groups requires the provider
+# to emit a groups claim (request the groups scope and set `groups_claim`).
+# admin_emails = ["you@example.com"]
+# admin_groups = ["shisho-admins"]
+
+[auth.session]
+# HMAC secret keying the session JWT and the short-lived login-state cookie.
+# When unset an ephemeral secret is generated at startup, so all sessions reset
+# on restart -- set it in any real deployment (`shisho encryption gen` prints a
+# suitable random value).
+# secret = "env:SHISHO_AUTH__SESSION__SECRET"
+ttl_hours = 168              # session lifetime (7 days)
+refresh_threshold_hours = 24 # sliding refresh window
+secure_cookie = false        # set true when served behind TLS
+
+# Identity providers shown on the login page (multi_user mode). Repeat the
+# [[auth.providers]] block once per backend.
+#
+# OIDC provider (discovery-based; only `issuer` is needed). Example: Google.
+# [[auth.providers]]
+# name = "google"                              # used in /auth/login/:name
+# kind = "oidc"                                # "oidc" (default) | "oauth2"
+# client_id = "..."
+# client_secret = "env:GOOGLE_CLIENT_SECRET"   # omit for public PKCE clients
+# issuer = "https://accounts.google.com"       # required for oidc
+# scopes = ["openid", "email", "profile"]      # defaults to these when empty
+# groups_claim = "groups"                       # claim to read groups from (admin_groups)
+#
+# Plain OAuth2 provider. Well-known backends ("github", "facebook") fill in the
+# endpoints; anything else supplies auth_url / token_url / userinfo_url.
+# [[auth.providers]]
+# name = "github"
+# kind = "oauth2"
+# client_id = "..."
+# client_secret = "env:GITHUB_CLIENT_SECRET"
+
+[app]
+# Display name shown by the UI and reported at /api/v1/info.
+name = "Shisho"
+
+[logging]
+level = "info"
+json = false
+
+[api]
+# Mount the Scalar API docs UI at /docs
+docs = true
+
+[mcp]
+# Serve the MCP Streamable HTTP transport at /mcp on the HTTP server. Requests
+# authenticate with a Bearer API key, or an OAuth token in multi-user mode.
+enabled = true
+# Allow unauthenticated MCP access over stdio (`shisho mcp stdio` as a local
+# trusted process). When false, stdio requires a verified API key in the
+# SHISHO_API_KEY env var (or auth.api_key).
+stdio_no_auth = false
+
+[encryption]
+# At-rest database encryption (SQLCipher). OFF by default: encryption is enabled
+# only once at least one `key_vN` is set. To enable, generate a 32-byte KEK with
+#   shisho encryption gen
+# then set key_v1 below -- inline, or "env:VAR" to read it from the environment.
+# The key must live OFF the data disk (env var / secret); the data directory only
+# stores the wrapped data key (shisho.keys, beside shisho.db). Once enabled, the
+# database is encrypted from first init; losing the key means the data cannot be
+# recovered. Enabling encryption on an existing plaintext database is not
+# supported in place -- start from a fresh data directory.
+key_version = 1
+# key_v1 = "env:SHISHO_ENCRYPTION__KEY_V1"
+# To rotate the KEK: add key_v2, set key_version = 2, then run
+#   shisho encryption rotate-kek
+# (the database is not rewritten -- only the small wrapped key in shisho.keys).
+# key_v2 = "env:SHISHO_ENCRYPTION__KEY_V2"

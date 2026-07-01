@@ -1,0 +1,76 @@
+services:
+  # Production app
+  shisho:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shisho
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro
+      - ./docker/data:/app/data:rw
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RUST_LOG: info
+    restart: unless-stopped
+    profiles:
+      - prod
+    networks:
+      - shisho-net
+
+  # Dev backend (cargo watch hot reload)
+  shisho-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: shisho-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - cargo_cache:/usr/local/cargo/registry
+      - target_cache:/app/target
+      - ./config:/app/config:ro
+      - ./docker/data:/app/data:rw
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RUST_BACKTRACE: "1"
+      RUST_LOG: debug
+    profiles:
+      - dev
+    networks:
+      - shisho-net
+
+  # Dev frontend (Vite dev server with HMR; proxies to backend)
+  frontend-dev:
+    image: node:24-alpine
+    container_name: shisho-frontend-dev
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      VITE_API_URL: http://shisho-dev:8080
+    depends_on:
+      - shisho-dev
+    profiles:
+      - dev
+    networks:
+      - shisho-net
+
+volumes:
+  cargo_cache:
+  target_cache:
+  frontend_node_modules:
+
+networks:
+  shisho-net:
+    driver: bridge

@@ -1,0 +1,1081 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "shisho API",
+    "description": "HTTP API, OpenAPI doc, and embedded SPA for shisho",
+    "contact": {
+      "name": "AshDevFr",
+      "email": "7372540+AshDevFr@users.noreply.github.com"
+    },
+    "license": {
+      "name": "MIT OR Apache-2.0",
+      "identifier": "MIT OR Apache-2.0"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/admin/encryption": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Encryption status (admin only). Reports whether at-rest encryption is on, the\nactive KEK version, and when it was last rotated. Never returns key material.",
+        "operationId": "encryption_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EncryptionStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List all users (admin only).",
+        "operationId": "list_users",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminUser"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/activate": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reactivate a user (admin only): clears `deactivated_at`.",
+        "operationId": "activate_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/deactivate": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Deactivate a user (admin only). An admin cannot deactivate themselves, which\nwould risk locking the instance out of its only admin.",
+        "operationId": "deactivate_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "Cannot deactivate yourself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/connections": {
+      "get": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "List the OAuth clients connected to the caller's account, one row per client.",
+        "operationId": "list_connections",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/connections/{client_id}": {
+      "delete": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "Revoke a connected client: delete every token it holds for this user. The\nconnector stops authenticating immediately.",
+        "operationId": "revoke_connection",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "description": "OAuth client id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "shisho"
+        ],
+        "summary": "Liveness check. Pings the database and reports `ok`.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/info": {
+      "get": {
+        "tags": [
+          "shisho"
+        ],
+        "summary": "Instance name, version, and auth mode.",
+        "operationId": "info",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys": {
+      "get": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "List API keys (metadata only, never key material).",
+        "operationId": "list_keys",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Create an API key. The response is the only time the plaintext is shown.",
+        "operationId": "create_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/keys/{id}": {
+      "delete": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Revoke (hard-delete) an API key. It stops authenticating immediately.",
+        "operationId": "delete_key",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Key id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/setup": {
+      "get": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Report the first-run state (token-gated).",
+        "operationId": "setup_state",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "description": "One-shot setup token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Setup is closed or the token is wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/setup/key": {
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Generate and reveal an admin key, then consume the setup token (single-user\nmode only; multi-user identities come from configured providers).",
+        "operationId": "generate_key",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "description": "One-shot setup token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not applicable in multi-user mode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Setup is closed or the token is wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/whoami": {
+      "get": {
+        "tags": [
+          "shisho"
+        ],
+        "summary": "Return the authenticated caller's key id, user id, and granted scopes.",
+        "operationId": "whoami",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoAmI"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminUser": {
+        "type": "object",
+        "description": "One user in the admin list.",
+        "required": [
+          "id",
+          "isAdmin"
+        ],
+        "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deactivatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "NULL when active; the deactivation timestamp otherwise."
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isAdmin": {
+            "type": "boolean"
+          },
+          "lastSeen": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ApiKeyResponse": {
+        "type": "object",
+        "description": "A stored key, sans any secret material.",
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastUsed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          }
+        }
+      },
+      "ConnectionResponse": {
+        "type": "object",
+        "description": "A client holding a live grant on the current user's account.",
+        "required": [
+          "clientId",
+          "scopes",
+          "connectedAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Display name from dynamic registration, if the client provided one."
+          },
+          "connectedAt": {
+            "type": "string",
+            "description": "When this client was first authorized (ISO 8601, earliest live grant)."
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Latest access-token expiry across this client's live grants (ISO 8601)."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          }
+        }
+      },
+      "CreateKeyRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO 8601 expiry; never expires when omitted."
+          },
+          "name": {
+            "type": "string",
+            "example": "laptop-cli"
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Granular `resource:action` scopes (e.g. `example:write`). The aliases\n`read`/`write`/`admin` are also accepted and expanded. Defaults to\nread-only (`example:read`)."
+          }
+        }
+      },
+      "CreatedKeyResponse": {
+        "type": "object",
+        "description": "POST response: the only place the plaintext key ever appears.",
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "key"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "The full API key. Store it now; it cannot be retrieved again.",
+            "example": "shisho_..."
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          }
+        }
+      },
+      "EncryptionStatus": {
+        "type": "object",
+        "description": "Read-only encryption status. Never includes key material: key management is\na deployment-layer concern (config + the `shisho encryption` CLI).",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether at-rest encryption is configured."
+          },
+          "kekVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The active KEK version wrapping the data key, if a keyfile exists.",
+            "minimum": 0
+          },
+          "lastRotatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the data key was last (re)wrapped (first init or KEK rotation)."
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "description": "Wire format of every error response.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code (clients switch on this).",
+            "example": "not_found"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "InfoResponse": {
+        "type": "object",
+        "description": "Instance metadata. Field names are part of the public API contract\n(`auth_mode` is snake_case by convention).",
+        "required": [
+          "name",
+          "version",
+          "auth_mode"
+        ],
+        "properties": {
+          "auth_mode": {
+            "type": "string",
+            "example": "single_user"
+          },
+          "name": {
+            "type": "string",
+            "description": "Configured display name of this instance.",
+            "example": "Shisho"
+          },
+          "version": {
+            "type": "string",
+            "example": "0.1.0"
+          }
+        }
+      },
+      "Scope": {
+        "type": "string",
+        "description": "API key permission as `resource:action`.",
+        "enum": [
+          "example:read",
+          "example:write",
+          "example:delete",
+          "keys:manage"
+        ]
+      },
+      "SetupKeyResponse": {
+        "type": "object",
+        "description": "The revealed admin key. Returned exactly once.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Plaintext admin API key. Store it now; it is never shown again."
+          }
+        }
+      },
+      "SetupStateResponse": {
+        "type": "object",
+        "description": "Unconfigured-state report for the wizard.",
+        "required": [
+          "authMode",
+          "providersConfigured"
+        ],
+        "properties": {
+          "authMode": {
+            "type": "string",
+            "description": "Configured auth mode (`single_user` / `multi_user`)."
+          },
+          "providersConfigured": {
+            "type": "integer",
+            "description": "Number of `[[auth.providers]]` already present in config.",
+            "minimum": 0
+          }
+        }
+      },
+      "WhoAmI": {
+        "type": "object",
+        "description": "The caller's verified identity. `keyId`/`userId` are null when the static\nconfig key authenticated (it lives outside the database).",
+        "required": [
+          "scopes"
+        ],
+        "properties": {
+          "keyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          },
+          "userId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "shisho",
+      "description": "Core endpoints: health, instance info, and the authenticated-identity echo."
+    },
+    {
+      "name": "keys",
+      "description": "API key management. Requires the keys:manage scope. Scopes are granular resource:action strings; the aliases read/write/admin are accepted on creation and expanded."
+    },
+    {
+      "name": "connections",
+      "description": "Connected-application (OAuth grant) management. Lists the OAuth clients holding a live grant on the caller's account and revokes one. Requires the keys:manage scope, so a browser session qualifies but a connector's own token does not."
+    },
+    {
+      "name": "admin",
+      "description": "Admin-only operations. In single-user mode the sole operator is the admin; in multi-user mode admin is the admin_emails/admin_groups allowlists, or the first provisioned user when both are empty."
+    },
+    {
+      "name": "setup",
+      "description": "First-run setup wizard. Token-gated and available only on an unconfigured instance; every route 404s once a credential is configured."
+    }
+  ]
+}

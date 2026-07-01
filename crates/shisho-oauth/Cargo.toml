@@ -1,0 +1,23 @@
+[package]
+name = "shisho-oauth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OAuth 2.0 authorization-server domain for shisho: clients, PKCE auth codes, tokens, and discovery documents for the MCP transport"
+
+[dependencies]
+shisho-auth = { workspace = true }
+shisho-db = { workspace = true }
+
+sea-orm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

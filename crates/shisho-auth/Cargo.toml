@@ -1,0 +1,34 @@
+[package]
+name = "shisho-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Authentication for shisho: API keys and scopes, the multi-user OIDC/OAuth2 login stack, sessions, and admin resolution"
+
+[features]
+default = []
+# Expose the test fixtures (API-key seeding) to other crates' tests.
+test-util = []
+
+[dependencies]
+shisho-config = { workspace = true }
+shisho-db = { workspace = true }
+
+sea-orm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+utoipa.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+argon2.workspace = true
+base64.workspace = true
+rand.workspace = true
+openidconnect.workspace = true
+oauth2.workspace = true
+jsonwebtoken.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

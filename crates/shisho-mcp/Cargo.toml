@@ -1,0 +1,36 @@
+[package]
+name = "shisho-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MCP server for shisho: one tool registry behind a Streamable HTTP transport and stdio, authenticated by the same keys as the REST API"
+
+[dependencies]
+shisho-api = { workspace = true }
+shisho-auth = { workspace = true }
+shisho-config = { workspace = true }
+shisho-db = { workspace = true }
+
+rmcp.workspace = true
+schemars.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[dev-dependencies]
+shisho-api = { workspace = true, features = ["test-util"] }
+shisho-oauth = { workspace = true }
+sea-orm.workspace = true
+tower = { workspace = true, features = ["util"] }
+http-body-util.workspace = true
+chrono.workspace = true
+# Client side of rmcp, used by the transport integration tests.
+rmcp = { workspace = true, features = [
+    "client",
+    "transport-streamable-http-client-reqwest",
+] }

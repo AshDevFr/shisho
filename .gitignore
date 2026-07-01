@@ -1,0 +1,43 @@
+# Build artifacts
+target/
+node_modules/
+dist/
+
+# Local-only docs and scratch (hybrid pattern)
+.shisho/
+
+# Data
+data/
+docker/data/
+*.db
+*.db-shm
+*.db-wal
+*.log
+logs/
+
+# Local config (committed via *.example.toml; *.docker.toml is also committed).
+# Any `<stem>.local.<ext>` sibling next to a committed config is auto-merged
+# on top of it by shisho-config::load and stays local-only.
+shisho.toml
+shisho.yaml
+config/shisho.toml
+config/shisho.yaml
+config/*.local.*
+
+# Environment overrides (committed via .env.example)
+.env
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# Tooling
+.playwright-mcp/
+.claude/local/
+.claude/settings.local.json
+
+# Generated frontend bits
+web/coverage/

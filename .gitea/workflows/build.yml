@@ -93,9 +93,14 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
+          # Prefix bumped to -v2- to abandon a poisoned Actions cache: the old
+          # `*-cargo-lint-` tarball fails `tar` restore (exit 2) and leaves a
+          # truncated crate in the registry, which then breaks clippy. Gitea's
+          # cache cannot be purged (go-gitea/gitea#26403), so the only fix is a
+          # fresh key prefix that never matches the poisoned entry.
+          key: ${{ runner.os }}-cargo-lint-v2-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-lint-
+            ${{ runner.os }}-cargo-lint-v2-
       - name: Format check
         run: cargo fmt --all -- --check
       - name: Clippy check

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440003",
+    "libraryId": "550e8400-e29b-41d4-a716-446655440001",
+    "libraryName": "Manga",
+    "title": "Dungeon Meshi",
+    "titleSort": "Dungeon Meshi",
+    "summary": "Adventurers cook and eat the monsters they slay in a deep dungeon.",
+    "publisher": "Enterbrain",
+    "year": 2014,
+    "path": "/library/manga/dungeon-meshi",
+    "bookCount": 14,
+    "unreadCount": 0,
+    "tracked": true,
+    "hasCustomCover": false,
+    "selectedCoverSource": null,
+    "localMaxVolume": 14,
+    "localMaxChapter": null,
+    "volumesOwned": 14,
+    "upstreamVolumeGap": null,
+    "upstreamChapterGap": null,
+    "upstreamGapProvider": null,
+    "createdAt": "2025-11-02T10:00:00Z",
+    "updatedAt": "2026-05-20T08:30:00Z"
+  }
+]

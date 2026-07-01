@@ -1,0 +1,161 @@
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "libraryId": "550e8400-e29b-41d4-a716-446655440001",
+      "libraryName": "Manga",
+      "path": "/library/manga/frieren",
+      "bookCount": 11,
+      "unreadCount": 11,
+      "tracked": true,
+      "hasCustomCover": false,
+      "selectedCoverSource": null,
+      "localMaxVolume": 11,
+      "localMaxChapter": null,
+      "volumesOwned": 11,
+      "upstreamVolumeGap": null,
+      "upstreamChapterGap": null,
+      "upstreamGapProvider": null,
+      "metadata": {
+        "title": "Sousou no Frieren",
+        "titleSort": "Sousou no Frieren",
+        "summary": "The adventure is over but life goes on for an elf mage just beginning to learn what living is all about.",
+        "status": "ended",
+        "year": 2020,
+        "publisher": "Shogakukan",
+        "language": "en",
+        "readingDirection": "rtl",
+        "ageRating": null,
+        "imprint": null,
+        "authors": [
+          { "name": "Kanehito Yamada", "role": "writer" }
+        ],
+        "totalVolumeCount": 14,
+        "totalChapterCount": null,
+        "locks": {},
+        "customMetadata": {},
+        "createdAt": "2025-11-02T10:00:00Z",
+        "updatedAt": "2026-05-20T08:30:00Z"
+      },
+      "genres": [
+        { "id": "g-1", "name": "Fantasy" },
+        { "id": "g-2", "name": "Adventure" }
+      ],
+      "tags": [
+        { "id": "t-1", "name": "Award Winner" }
+      ],
+      "alternateTitles": [],
+      "externalRatings": [],
+      "externalLinks": [],
+      "externalIds": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440010",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+          "source": "plugin:mangabaka",
+          "externalId": "112092",
+          "externalUrl": "https://mangabaka.dev/112092",
+          "metadata_hash": null,
+          "last_synced_at": "2026-05-20T08:30:00Z",
+          "createdAt": "2025-11-02T10:00:00Z",
+          "updatedAt": "2026-05-20T08:30:00Z"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440011",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+          "source": "plugin:myanimelist",
+          "externalId": "126287",
+          "externalUrl": "https://myanimelist.net/manga/126287",
+          "metadata_hash": null,
+          "last_synced_at": null,
+          "createdAt": "2025-11-02T10:00:00Z",
+          "updatedAt": "2026-05-20T08:30:00Z"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440012",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+          "source": "comicinfo",
+          "externalId": "frieren-local",
+          "externalUrl": null,
+          "metadata_hash": null,
+          "last_synced_at": null,
+          "createdAt": "2025-11-02T10:00:00Z",
+          "updatedAt": "2026-05-20T08:30:00Z"
+        }
+      ],
+      "createdAt": "2025-11-02T10:00:00Z",
+      "updatedAt": "2026-05-20T08:30:00Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "libraryId": "550e8400-e29b-41d4-a716-446655440001",
+      "libraryName": "Manga",
+      "path": "/library/manga/dungeon-meshi",
+      "bookCount": 14,
+      "unreadCount": 0,
+      "tracked": true,
+      "hasCustomCover": false,
+      "selectedCoverSource": null,
+      "localMaxVolume": 14,
+      "localMaxChapter": null,
+      "volumesOwned": 14,
+      "upstreamVolumeGap": null,
+      "upstreamChapterGap": null,
+      "upstreamGapProvider": null,
+      "metadata": {
+        "title": "Dungeon Meshi",
+        "titleSort": "Dungeon Meshi",
+        "summary": "Adventurers cook and eat the monsters they slay in a deep dungeon.",
+        "status": "ended",
+        "year": 2014,
+        "publisher": "Enterbrain",
+        "language": "en",
+        "readingDirection": "rtl",
+        "ageRating": null,
+        "imprint": null,
+        "authors": [
+          { "name": "Ryoko Kui", "role": "writer" }
+        ],
+        "totalVolumeCount": 14,
+        "totalChapterCount": null,
+        "locks": {},
+        "customMetadata": {},
+        "createdAt": "2025-11-02T10:00:00Z",
+        "updatedAt": "2026-05-20T08:30:00Z"
+      },
+      "genres": [
+        { "id": "g-1", "name": "Fantasy" },
+        { "id": "g-3", "name": "Comedy" }
+      ],
+      "tags": [],
+      "alternateTitles": [],
+      "externalRatings": [],
+      "externalLinks": [],
+      "externalIds": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440013",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440003",
+          "source": "plugin:anilist",
+          "externalId": "86952",
+          "externalUrl": "https://anilist.co/manga/86952",
+          "metadata_hash": null,
+          "last_synced_at": null,
+          "createdAt": "2025-11-02T10:00:00Z",
+          "updatedAt": "2026-05-20T08:30:00Z"
+        }
+      ],
+      "createdAt": "2025-11-02T10:00:00Z",
+      "updatedAt": "2026-05-20T08:30:00Z"
+    }
+  ],
+  "page": 1,
+  "pageSize": 50,
+  "total": 2,
+  "totalPages": 1,
+  "links": {
+    "self": "/api/v1/series?full=true&page=1&pageSize=50",
+    "first": "/api/v1/series?full=true&page=1&pageSize=50",
+    "last": "/api/v1/series?full=true&page=1&pageSize=50",
+    "next": null,
+    "prev": null
+  }
+}

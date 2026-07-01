@@ -11,6 +11,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder,
     Set,
 };
+use shisho_crypto::{CryptoError, Dek};
 
 use crate::entities::users;
 
@@ -90,6 +91,10 @@ pub async fn find_or_create(
         created_at: Set(now.clone()),
         last_seen: Set(Some(now.clone())),
         deactivated_at: Set(None),
+        // A fresh user has no Codex identity until first sign-in mints one.
+        codex_user_sub: Set(None),
+        codex_key_ciphertext: Set(None),
+        codex_key_version: Set(None),
     };
 
     match model.insert(db).await {
@@ -127,6 +132,109 @@ pub async fn set_deactivated(
         .exec(db)
         .await?;
     Ok(res.rows_affected > 0)
+}
+
+/// A user's decrypted Codex credential: the linked `codex_user_sub` and the
+/// recovered plaintext key, ready to present to Codex.
+#[derive(Debug, Clone)]
+pub struct CodexCredential {
+    pub codex_user_sub: String,
+    pub key: String,
+}
+
+/// Reading a stored Codex credential can fail either at the database or at the
+/// unseal step (wrong DEK / tampered blob).
+#[derive(Debug, thiserror::Error)]
+pub enum CodexCredentialError {
+    #[error(transparent)]
+    Db(#[from] DbErr),
+    #[error("decrypting the stored Codex key failed")]
+    Crypto(#[from] CryptoError),
+}
+
+/// Store (or replace) a user's minted Codex credential: the `codex_user_sub`
+/// linkage and the key sealed with the DEK-derived at-rest key. Only ciphertext
+/// touches the row. `kek_version` is recorded for a future re-seal. Returns
+/// whether a row was updated (false = no such user).
+pub async fn set_codex_credential(
+    db: &DatabaseConnection,
+    user_id: &str,
+    codex_user_sub: &str,
+    key_plaintext: &str,
+    dek: &Dek,
+    kek_version: u32,
+) -> Result<bool, DbErr> {
+    let sealing_key = shisho_crypto::file_key(dek);
+    let ciphertext = shisho_crypto::seal(&sealing_key, key_plaintext.as_bytes());
+    let res = users::Entity::update_many()
+        .col_expr(users::Column::CodexUserSub, Expr::value(codex_user_sub))
+        .col_expr(users::Column::CodexKeyCiphertext, Expr::value(ciphertext))
+        .col_expr(
+            users::Column::CodexKeyVersion,
+            Expr::value(kek_version as i32),
+        )
+        .filter(users::Column::Id.eq(user_id))
+        .exec(db)
+        .await?;
+    Ok(res.rows_affected > 0)
+}
+
+/// Read and unseal a user's Codex credential. `Ok(None)` when the user is
+/// unknown or has no stored credential; `Err(Crypto)` when the blob will not
+/// open under this DEK.
+pub async fn get_codex_credential(
+    db: &DatabaseConnection,
+    user_id: &str,
+    dek: &Dek,
+) -> Result<Option<CodexCredential>, CodexCredentialError> {
+    let Some(user) = users::Entity::find_by_id(user_id).one(db).await? else {
+        return Ok(None);
+    };
+    let (Some(codex_user_sub), Some(ciphertext)) = (user.codex_user_sub, user.codex_key_ciphertext)
+    else {
+        return Ok(None);
+    };
+    let sealing_key = shisho_crypto::file_key(dek);
+    let plaintext = shisho_crypto::open(&sealing_key, &ciphertext)?;
+    // A non-UTF-8 result means the blob opened but is not the key we stored.
+    let key = String::from_utf8(plaintext).map_err(|_| CryptoError::Decrypt)?;
+    Ok(Some(CodexCredential {
+        codex_user_sub,
+        key,
+    }))
+}
+
+/// Clear a user's Codex credential back to NULL (used on revocation / logout).
+/// Returns whether a row was updated.
+pub async fn clear_codex_credential(db: &DatabaseConnection, user_id: &str) -> Result<bool, DbErr> {
+    let res = users::Entity::update_many()
+        .col_expr(
+            users::Column::CodexUserSub,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            users::Column::CodexKeyCiphertext,
+            Expr::value(Option::<Vec<u8>>::None),
+        )
+        .col_expr(
+            users::Column::CodexKeyVersion,
+            Expr::value(Option::<i32>::None),
+        )
+        .filter(users::Column::Id.eq(user_id))
+        .exec(db)
+        .await?;
+    Ok(res.rows_affected > 0)
+}
+
+/// Reverse lookup: the user linked to a given `codex_user_sub`, if any.
+pub async fn find_by_codex_user_sub(
+    db: &DatabaseConnection,
+    codex_user_sub: &str,
+) -> Result<Option<users::Model>, DbErr> {
+    users::Entity::find()
+        .filter(users::Column::CodexUserSub.eq(codex_user_sub))
+        .one(db)
+        .await
 }
 
 /// Update mutable profile fields and `last_seen` on an existing row.
@@ -271,6 +379,87 @@ mod tests {
 
         // No such user.
         assert!(!set_deactivated(&db, "nope", None).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn codex_credential_round_trips_stores_ciphertext_and_clears() {
+        let db = connect_in_memory().await;
+        let user = find_or_create(&db, &identity()).await.unwrap();
+        let dek = shisho_crypto::generate_dek();
+
+        assert!(
+            set_codex_credential(&db, &user.id, "codex-sub-1", "codex-key-secret", &dek, 3)
+                .await
+                .unwrap()
+        );
+
+        let cred = get_codex_credential(&db, &user.id, &dek)
+            .await
+            .unwrap()
+            .expect("credential present");
+        assert_eq!(cred.codex_user_sub, "codex-sub-1");
+        assert_eq!(cred.key, "codex-key-secret");
+
+        // The row stores ciphertext + version, never the plaintext key.
+        let row = get(&db, &user.id).await.unwrap().unwrap();
+        assert_eq!(row.codex_key_version, Some(3));
+        let ciphertext = row.codex_key_ciphertext.expect("ciphertext");
+        let needle = b"codex-key-secret";
+        assert!(
+            !ciphertext.windows(needle.len()).any(|w| w == needle),
+            "the plaintext key must not appear in the stored blob"
+        );
+
+        // Clear resets all three columns to NULL.
+        assert!(clear_codex_credential(&db, &user.id).await.unwrap());
+        assert!(
+            get_codex_credential(&db, &user.id, &dek)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let row = get(&db, &user.id).await.unwrap().unwrap();
+        assert!(row.codex_user_sub.is_none());
+        assert!(row.codex_key_ciphertext.is_none());
+        assert!(row.codex_key_version.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_by_codex_user_sub_resolves_and_misses() {
+        let db = connect_in_memory().await;
+        let user = find_or_create(&db, &identity()).await.unwrap();
+        let dek = shisho_crypto::generate_dek();
+        set_codex_credential(&db, &user.id, "codex-sub-xyz", "k", &dek, 1)
+            .await
+            .unwrap();
+
+        let found = find_by_codex_user_sub(&db, "codex-sub-xyz")
+            .await
+            .unwrap()
+            .expect("user for the sub");
+        assert_eq!(found.id, user.id);
+        assert!(
+            find_by_codex_user_sub(&db, "unknown-sub")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn get_credential_under_wrong_dek_is_a_crypto_error() {
+        let db = connect_in_memory().await;
+        let user = find_or_create(&db, &identity()).await.unwrap();
+        let dek = shisho_crypto::generate_dek();
+        set_codex_credential(&db, &user.id, "s", "secret", &dek, 1)
+            .await
+            .unwrap();
+
+        let wrong = shisho_crypto::generate_dek();
+        assert!(matches!(
+            get_codex_credential(&db, &user.id, &wrong).await,
+            Err(CodexCredentialError::Crypto(_))
+        ));
     }
 
     #[tokio::test]

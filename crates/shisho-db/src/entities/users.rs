@@ -22,6 +22,17 @@ pub struct Model {
     /// deactivated user is locked out (sessions and API keys rejected) but
     /// keeps their data; clearing it restores access.
     pub deactivated_at: Option<String>,
+    /// Codex user id this user is linked to, minted at first sign-in. NULL
+    /// until a Codex credential is minted. The `user -> codex_user_sub`
+    /// linkage is the identity broker's whole job.
+    pub codex_user_sub: Option<String>,
+    /// The minted Codex API key, sealed with the DEK-derived at-rest key
+    /// (`shisho_crypto::seal`, nonce embedded). NULL when no key is stored.
+    /// Never a plaintext key column.
+    pub codex_key_ciphertext: Option<Vec<u8>>,
+    /// KEK generation that sealed `codex_key_ciphertext`, so a future
+    /// encryption-scheme change can identify and re-seal old blobs.
+    pub codex_key_version: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

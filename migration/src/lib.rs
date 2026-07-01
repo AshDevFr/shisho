@@ -7,6 +7,7 @@ mod m20260701_000002_create_profiles;
 mod m20260701_000003_create_profile_versions;
 mod m20260701_000004_create_reconciliation_flags;
 mod m20260701_000005_create_feed_cursor;
+mod m20260701_000006_users_codex_credential;
 
 pub struct Migrator;
 
@@ -20,6 +21,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260701_000003_create_profile_versions::Migration),
             Box::new(m20260701_000004_create_reconciliation_flags::Migration),
             Box::new(m20260701_000005_create_feed_cursor::Migration),
+            Box::new(m20260701_000006_users_codex_credential::Migration),
         ]
     }
 }

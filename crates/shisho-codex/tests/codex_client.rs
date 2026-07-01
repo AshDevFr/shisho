@@ -90,12 +90,7 @@ async fn list_libraries_returns_the_callers_libraries() {
     Mock::given(method("GET"))
         .and(path("/api/v1/libraries"))
         .and(header("X-API-Key", "test-key"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": [
-                { "id": "lib-1", "name": "Manga", "seriesCount": 42 },
-                { "id": "lib-2", "name": "Comics", "seriesCount": 7 }
-            ]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("libraries")))
         .expect(1)
         .mount(&server)
         .await;
@@ -268,19 +263,7 @@ async fn mint_api_key_sends_least_priv_scopes_and_parses_the_one_time_key() {
             "name": "shisho",
             "permissions": ["series:read", "libraries:read"]
         })))
-        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-            "id": "key-uuid",
-            "userId": "user-uuid",
-            "name": "shisho",
-            "keyPrefix": "codex_abc123",
-            "permissions": ["series:read", "libraries:read"],
-            "isActive": true,
-            "expiresAt": null,
-            "lastUsedAt": null,
-            "createdAt": "2026-06-30T00:00:00Z",
-            "updatedAt": "2026-06-30T00:00:00Z",
-            "key": "codex_abc123_def456ghi789"
-        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(fixture("mint_api_key")))
         .expect(1)
         .mount(&server)
         .await;
@@ -292,7 +275,7 @@ async fn mint_api_key_sends_least_priv_scopes_and_parses_the_one_time_key() {
         .expect("mint");
     assert_eq!(minted.key, "codex_abc123_def456ghi789");
     assert_eq!(minted.key_prefix, "codex_abc123");
-    assert_eq!(minted.id, "key-uuid");
+    assert_eq!(minted.id, "550e8400-e29b-41d4-a716-4466554400a0");
     assert!(minted.is_active);
     assert!(minted.expires_at.is_none());
 }

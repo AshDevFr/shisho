@@ -1,0 +1,27 @@
+{
+  "id": 201,
+  "canonicalTitle": "Sousou no Frieren",
+  "alternateTitles": ["Frieren: Beyond Journey's End"],
+  "description": "The adventure is over but life goes on for an elf mage just beginning to learn what living is all about.",
+  "kind": "manga",
+  "status": "ongoing",
+  "year": 2020,
+  "genres": ["Fantasy", "Adventure"],
+  "tags": ["Award Winner"],
+  "metadataSource": "auto",
+  "metadataFetchedAt": 1765200000,
+  "rating": 8.9,
+  "totalVolumes": 14,
+  "totalChapters": null,
+  "highestVolume": 13.0,
+  "highestChapter": null,
+  "owned": false,
+  "externalIds": [
+    { "provider": "mangabaka", "externalId": "112092", "fetchedAt": 1765200000 },
+    { "provider": "mal", "externalId": "126287", "fetchedAt": 1765200000 }
+  ],
+  "codex": null,
+  "coverUrl": null,
+  "firstSeenAt": 1731000000,
+  "lastReleaseAt": 1765230000
+}

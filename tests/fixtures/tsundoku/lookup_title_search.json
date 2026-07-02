@@ -1,0 +1,33 @@
+{
+  "provider": "mangabaka",
+  "hits": [
+    {
+      "externalId": "112092",
+      "title": "Sousou no Frieren",
+      "nativeTitle": "葬送のフリーレン",
+      "kind": "manga",
+      "status": "ongoing",
+      "year": 2020,
+      "genres": ["Fantasy", "Adventure"],
+      "tags": [],
+      "totalVolumes": 14,
+      "totalChapters": null,
+      "coverUrl": null,
+      "score": 0.97
+    },
+    {
+      "externalId": "40001",
+      "title": "Frieren Anthology",
+      "nativeTitle": null,
+      "kind": "manga",
+      "status": "ended",
+      "year": 2022,
+      "genres": ["Fantasy"],
+      "tags": [],
+      "totalVolumes": 1,
+      "totalChapters": null,
+      "coverUrl": null,
+      "score": 0.55
+    }
+  ]
+}

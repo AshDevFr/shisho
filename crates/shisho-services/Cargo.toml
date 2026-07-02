@@ -14,6 +14,7 @@ shisho-crypto = { workspace = true }
 shisho-ids = { workspace = true }
 shisho-tsundoku = { workspace = true }
 shisho-mangabaka = { workspace = true }
+shisho-config = { workspace = true }
 
 anyhow.workspace = true
 thiserror.workspace = true
@@ -25,11 +26,14 @@ schemars.workspace = true
 serde.workspace = true
 sea-orm.workspace = true
 tokio.workspace = true
+tokio-cron-scheduler.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
 serde_json.workspace = true
 reqwest.workspace = true
-shisho-config = { workspace = true }
 migration = { workspace = true }
+uuid.workspace = true
+tempfile = "3"
+shisho-mangabaka = { workspace = true, features = ["test-fixtures"] }

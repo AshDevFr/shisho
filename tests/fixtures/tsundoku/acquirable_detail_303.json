@@ -1,0 +1,26 @@
+{
+  "id": 303,
+  "canonicalTitle": "Already Verdicted",
+  "alternateTitles": [],
+  "description": "Recommended once already; the verdict stands.",
+  "kind": "manga",
+  "status": "ongoing",
+  "year": 2018,
+  "genres": ["Drama"],
+  "tags": [],
+  "metadataSource": "auto",
+  "metadataFetchedAt": 1765200000,
+  "rating": 8.5,
+  "totalVolumes": 5,
+  "totalChapters": null,
+  "highestVolume": 5.0,
+  "highestChapter": null,
+  "owned": false,
+  "externalIds": [
+    { "provider": "mangabaka", "externalId": "9999", "fetchedAt": 1765200000 }
+  ],
+  "codex": null,
+  "coverUrl": null,
+  "firstSeenAt": 1731000000,
+  "lastReleaseAt": 1765230000
+}

@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "seriesId": 301,
+      "canonicalTitle": "Top Rated Pick",
+      "externalIds": [
+        { "provider": "mangabaka", "externalId": "50001", "fetchedAt": 1765200000 },
+        { "provider": "mangadex", "externalId": "zzz-yyy", "fetchedAt": 1765200000 }
+      ],
+      "volumeCoverage": [{ "start": 1.0, "end": 12.0 }],
+      "chapterCoverage": [{ "start": 1.0, "end": 96.0 }],
+      "highestVolume": 12.0,
+      "highestChapter": 96.0,
+      "updatedAt": 1765230000
+    }
+  ],
+  "nextCursor": null,
+  "hasMore": false
+}

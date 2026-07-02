@@ -1,0 +1,27 @@
+{
+  "id": 301,
+  "canonicalTitle": "Top Rated Pick",
+  "alternateTitles": [],
+  "description": "An unowned, highly rated fantasy series.",
+  "kind": "manga",
+  "status": "ongoing",
+  "year": 2019,
+  "genres": ["Fantasy"],
+  "tags": ["Magic"],
+  "metadataSource": "auto",
+  "metadataFetchedAt": 1765200000,
+  "rating": 9.1,
+  "totalVolumes": 12,
+  "totalChapters": null,
+  "highestVolume": 12.0,
+  "highestChapter": null,
+  "owned": false,
+  "externalIds": [
+    { "provider": "mangabaka", "externalId": "50001", "fetchedAt": 1765200000 },
+    { "provider": "mangadex", "externalId": "zzz-yyy", "fetchedAt": 1765200000 }
+  ],
+  "codex": null,
+  "coverUrl": null,
+  "firstSeenAt": 1731000000,
+  "lastReleaseAt": 1765230000
+}

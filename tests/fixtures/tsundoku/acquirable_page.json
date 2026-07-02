@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "id": 301,
+      "canonicalTitle": "Top Rated Pick",
+      "genres": ["Fantasy"],
+      "tags": ["Magic"],
+      "metadataSource": "auto",
+      "lastReleaseAt": 1765230000,
+      "firstSeenAt": 1731000000,
+      "releaseCount": 40,
+      "totalVolumes": 12,
+      "totalChapters": null,
+      "highestVolume": 12.0,
+      "highestChapter": null,
+      "rating": 9.1,
+      "owned": false,
+      "codex": null
+    },
+    {
+      "id": 302,
+      "canonicalTitle": "Owned But The Sweep Lies",
+      "genres": ["Fantasy"],
+      "tags": [],
+      "metadataSource": "auto",
+      "lastReleaseAt": 1765230000,
+      "firstSeenAt": 1731000000,
+      "releaseCount": 30,
+      "totalVolumes": 14,
+      "totalChapters": null,
+      "highestVolume": 14.0,
+      "highestChapter": null,
+      "rating": 8.8,
+      "owned": false,
+      "codex": {
+        "status": "present",
+        "seriesUuid": "lib-a",
+        "deepLink": "https://codex.local/series/lib-a",
+        "linkKind": "series",
+        "localMaxVolume": 11.0,
+        "localMaxChapter": null,
+        "volumesOwned": 11,
+        "syncedAt": 1765200000
+      }
+    },
+    {
+      "id": 303,
+      "canonicalTitle": "Already Verdicted",
+      "genres": ["Drama"],
+      "tags": [],
+      "metadataSource": "auto",
+      "lastReleaseAt": 1765230000,
+      "firstSeenAt": 1731000000,
+      "releaseCount": 10,
+      "totalVolumes": 5,
+      "totalChapters": null,
+      "highestVolume": 5.0,
+      "highestChapter": null,
+      "rating": 8.5,
+      "owned": false,
+      "codex": null
+    }
+  ],
+  "page": 0,
+  "pageSize": 50,
+  "total": 3,
+  "codexSyncedAt": 1765200000
+}

@@ -1,0 +1,135 @@
+{
+  "data": [
+    {
+      "id": "lib-a",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "bookCount": 11,
+      "unreadCount": 11,
+      "metadata": {
+        "title": "Sousou no Frieren",
+        "summary": "Codex summary for Frieren.",
+        "status": "ended",
+        "year": 2020,
+        "publisher": "Shogakukan",
+        "totalVolumeCount": 14,
+        "totalChapterCount": null
+      },
+      "genres": [{ "id": "g-1", "name": "Fantasy" }],
+      "tags": [],
+      "externalIds": [
+        { "id": "x-1", "seriesId": "lib-a", "source": "plugin:mangabaka", "externalId": "112092", "externalUrl": null },
+        { "id": "x-2", "seriesId": "lib-a", "source": "plugin:myanimelist", "externalId": "126287", "externalUrl": null }
+      ]
+    },
+    {
+      "id": "lib-b",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "bookCount": 3,
+      "unreadCount": 3,
+      "metadata": {
+        "title": "Obscure Title",
+        "summary": "A series Tsundoku has never heard of.",
+        "status": "ongoing",
+        "year": 2021,
+        "publisher": null,
+        "totalVolumeCount": null,
+        "totalChapterCount": null
+      },
+      "genres": [{ "id": "g-4", "name": "Mystery" }],
+      "tags": [],
+      "externalIds": [
+        { "id": "x-3", "seriesId": "lib-b", "source": "plugin:anilist", "externalId": "99999", "externalUrl": null }
+      ]
+    },
+    {
+      "id": "lib-c",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "bookCount": 2,
+      "unreadCount": 2,
+      "metadata": {
+        "title": "Verdicted By Pair",
+        "summary": null,
+        "status": null,
+        "year": null,
+        "publisher": null,
+        "totalVolumeCount": null,
+        "totalChapterCount": null
+      },
+      "genres": [],
+      "tags": [],
+      "externalIds": [
+        { "id": "x-4", "seriesId": "lib-c", "source": "plugin:mangaupdates", "externalId": "777", "externalUrl": null }
+      ]
+    },
+    {
+      "id": "lib-d",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "bookCount": 4,
+      "unreadCount": 4,
+      "metadata": {
+        "title": "Retracted Only",
+        "summary": "Once retracted, recommendable again.",
+        "status": null,
+        "year": null,
+        "publisher": null,
+        "totalVolumeCount": null,
+        "totalChapterCount": null
+      },
+      "genres": [],
+      "tags": [],
+      "externalIds": [
+        { "id": "x-5", "seriesId": "lib-d", "source": "plugin:kitsu", "externalId": "555", "externalUrl": null }
+      ]
+    },
+    {
+      "id": "lib-e",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "bookCount": 14,
+      "unreadCount": 0,
+      "metadata": {
+        "title": "Already Read",
+        "summary": null,
+        "status": "ended",
+        "year": 2014,
+        "publisher": null,
+        "totalVolumeCount": 14,
+        "totalChapterCount": null
+      },
+      "genres": [],
+      "tags": [],
+      "externalIds": [
+        { "id": "x-6", "seriesId": "lib-e", "source": "plugin:mangadex", "externalId": "abc-def", "externalUrl": null }
+      ]
+    },
+    {
+      "id": "lib-f",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "bookCount": 1,
+      "unreadCount": 1,
+      "metadata": {
+        "title": "Verdicted By MangaBaka Id",
+        "summary": null,
+        "status": null,
+        "year": null,
+        "publisher": null,
+        "totalVolumeCount": null,
+        "totalChapterCount": null
+      },
+      "genres": [],
+      "tags": [],
+      "externalIds": [
+        { "id": "x-7", "seriesId": "lib-f", "source": "plugin:mangabaka", "externalId": "333", "externalUrl": null }
+      ]
+    }
+  ],
+  "page": 1,
+  "pageSize": 100,
+  "total": 6,
+  "totalPages": 1
+}

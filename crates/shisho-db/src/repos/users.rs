@@ -253,6 +253,36 @@ async fn refresh(
     active.update(db).await
 }
 
+/// "Known users" — the users the housekeeping sweeps iterate. Shisho stores
+/// no separate user registry for sweeps; a user is known iff they left rows
+/// in Shisho-owned tables (verdicts or profiles). Returns every `user_sub`
+/// with such state, sorted and deduplicated.
+pub async fn known_user_subs(db: &DatabaseConnection) -> Result<Vec<String>, DbErr> {
+    use std::collections::BTreeSet;
+
+    use sea_orm::QuerySelect;
+
+    use crate::entities::{profile, verdict};
+
+    let verdict_users: Vec<String> = verdict::Entity::find()
+        .select_only()
+        .column(verdict::Column::UserSub)
+        .distinct()
+        .into_tuple()
+        .all(db)
+        .await?;
+    let profile_users: Vec<String> = profile::Entity::find()
+        .select_only()
+        .column(profile::Column::UserSub)
+        .distinct()
+        .into_tuple()
+        .all(db)
+        .await?;
+
+    let set: BTreeSet<String> = verdict_users.into_iter().chain(profile_users).collect();
+    Ok(set.into_iter().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

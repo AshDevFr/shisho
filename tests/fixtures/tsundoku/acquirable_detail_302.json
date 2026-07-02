@@ -1,0 +1,35 @@
+{
+  "id": 302,
+  "canonicalTitle": "Owned But The Sweep Lies",
+  "alternateTitles": [],
+  "description": "The caller owns this series; Tsundoku's owned flag says otherwise.",
+  "kind": "manga",
+  "status": "ended",
+  "year": 2020,
+  "genres": ["Fantasy"],
+  "tags": [],
+  "metadataSource": "auto",
+  "metadataFetchedAt": 1765200000,
+  "rating": 8.8,
+  "totalVolumes": 14,
+  "totalChapters": null,
+  "highestVolume": 14.0,
+  "highestChapter": null,
+  "owned": false,
+  "externalIds": [
+    { "provider": "mal", "externalId": "126287", "fetchedAt": 1765200000 }
+  ],
+  "codex": {
+    "status": "present",
+    "seriesUuid": "lib-a",
+    "deepLink": "https://codex.local/series/lib-a",
+    "linkKind": "series",
+    "localMaxVolume": 11.0,
+    "localMaxChapter": null,
+    "volumesOwned": 11,
+    "syncedAt": 1765200000
+  },
+  "coverUrl": null,
+  "firstSeenAt": 1731000000,
+  "lastReleaseAt": 1765230000
+}

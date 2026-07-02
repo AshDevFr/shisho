@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "seriesId": 201,
+      "canonicalTitle": "Sousou no Frieren",
+      "externalIds": [
+        { "provider": "mangabaka", "externalId": "112092", "fetchedAt": 1765200000 },
+        { "provider": "mal", "externalId": "126287", "fetchedAt": 1765200000 }
+      ],
+      "volumeCoverage": [{ "start": 1.0, "end": 13.0 }],
+      "chapterCoverage": [],
+      "highestVolume": 13.0,
+      "highestChapter": null,
+      "updatedAt": 1765230000
+    }
+  ],
+  "nextCursor": null,
+  "hasMore": false
+}

@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "id": "lib-a",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "title": "Sousou no Frieren",
+      "bookCount": 11,
+      "unreadCount": 11,
+      "tracked": true,
+      "summary": "Codex summary for Frieren."
+    },
+    {
+      "id": "lib-e",
+      "libraryId": "lib",
+      "libraryName": "Manga",
+      "title": "Already Read",
+      "bookCount": 14,
+      "unreadCount": 0,
+      "tracked": true,
+      "summary": null
+    }
+  ],
+  "page": 1,
+  "pageSize": 50,
+  "total": 2,
+  "totalPages": 1
+}

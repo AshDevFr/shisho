@@ -12,6 +12,7 @@ shisho-codex = { workspace = true }
 shisho-db = { workspace = true }
 shisho-crypto = { workspace = true }
 shisho-ids = { workspace = true }
+shisho-tsundoku = { workspace = true }
 
 anyhow.workspace = true
 thiserror.workspace = true
@@ -21,9 +22,13 @@ hex.workspace = true
 chrono.workspace = true
 schemars.workspace = true
 serde.workspace = true
+sea-orm.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
 serde_json.workspace = true
 reqwest.workspace = true
+shisho-config = { workspace = true }
+migration = { workspace = true }

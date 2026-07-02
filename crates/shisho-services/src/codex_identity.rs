@@ -8,12 +8,16 @@
 //! narrow, revocable credential instead of forwarding the user's token per
 //! request.
 
-use shisho_codex::{CodexClient, CodexCredential, CodexError, SHISHO_KEY_SCOPES};
+use std::time::Duration;
+
+use shisho_cache::{Freshness, SwrCache, SwrConfig};
+use shisho_codex::{CodexClient, CodexCredential, CodexError, SHISHO_KEY_SCOPES, UserCtx};
 use shisho_db::repos::users;
+use shisho_db::repos::users::CodexCredentialError;
 use shisho_db::{DatabaseConnection, DbErr, Dek};
 
-/// Minting the key or persisting it failed. The authorizing credential is never
-/// included in the error (it is not stored or logged).
+/// Minting, persisting, or resolving a Codex credential failed. The credential
+/// itself is never included in the error (not stored or logged).
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityError {
     #[error("codex rejected the mint or /me call: {0}")]
@@ -22,6 +26,24 @@ pub enum IdentityError {
     Db(#[from] DbErr),
     #[error("no user row to attach the codex credential to (id {0})")]
     UnknownUser(String),
+    #[error("reading the stored codex credential failed: {0}")]
+    StoredCredential(#[from] CodexCredentialError),
+    #[error("no codex credential is stored for this user; sign in to mint one")]
+    NoCredential,
+    #[error("the stored codex key was revoked or expired; re-authenticate at the Shisho UI")]
+    CredentialsExpired,
+}
+
+impl IdentityError {
+    /// The caller-facing message to relay verbatim (MCP re-auth error / Status)
+    /// when the stored credential is no longer valid. `None` for errors that are
+    /// not the user's to fix by re-authenticating.
+    pub fn reauth_message(&self) -> Option<&'static str> {
+        matches!(self, IdentityError::CredentialsExpired).then_some(
+            "Your Codex authorization expired or was revoked. \
+             Re-authenticate at the Shisho UI to restore access.",
+        )
+    }
 }
 
 /// Mint the Shisho-dedicated least-privilege Codex key for `user_id`, resolve
@@ -68,11 +90,93 @@ pub async fn mint_and_store(
     Ok(who.id)
 }
 
+/// The per-request Codex identity resolver: turns a signed-in shell user into a
+/// [`UserCtx`] (its `codex_user_sub` + the stored key) for outbound Codex calls,
+/// caching `/me` validation so a live check runs at most once per
+/// `revalidate_after`. Cheap to clone (shared client + cache).
+#[derive(Clone)]
+pub struct CodexIdentity {
+    codex: CodexClient,
+    /// `sha256(minted key)` → `codex_user_sub`. Keying on the key hash (not the
+    /// user id) means a rotated or revoked key misses immediately and forces a
+    /// fresh `/me`, so revocation propagates within one `revalidate_after`.
+    validation: SwrCache<String, String>,
+}
+
+impl CodexIdentity {
+    /// Build the resolver over a Codex client, validating each stored key via
+    /// `/me` at most once per `revalidate_after` (≈5 min in production).
+    pub fn new(codex: CodexClient, revalidate_after: Duration) -> Self {
+        Self {
+            codex,
+            validation: SwrCache::new(SwrConfig {
+                revalidate_after,
+                build_budget: Duration::from_secs(10),
+            }),
+        }
+    }
+
+    /// The shared Codex client, for callers that make their own per-user calls.
+    pub fn codex(&self) -> &CodexClient {
+        &self.codex
+    }
+
+    /// Resolve `user_id` to a [`UserCtx`]. Decrypts the stored key, then
+    /// validates it against Codex `/me` unless a fresh validation is cached. A
+    /// Codex 401 becomes [`IdentityError::CredentialsExpired`] — never a silent
+    /// fallthrough. The `/me`-reported id is authoritative for `user_sub`.
+    pub async fn resolve(
+        &self,
+        db: &DatabaseConnection,
+        dek: &Dek,
+        user_id: &str,
+    ) -> Result<UserCtx, IdentityError> {
+        let cred = users::get_codex_credential(db, user_id, dek)
+            .await?
+            .ok_or(IdentityError::NoCredential)?;
+        let key_hash = sha256_hex(&cred.key);
+
+        if let Some(cached) = self.validation.peek(&key_hash)
+            && cached.freshness == Freshness::Fresh
+        {
+            return Ok(UserCtx {
+                user_sub: cached.value,
+                credential: CodexCredential::ApiKey(cred.key),
+            });
+        }
+
+        match self
+            .codex
+            .me(&CodexCredential::ApiKey(cred.key.clone()))
+            .await
+        {
+            Ok(user) => {
+                self.validation.insert(key_hash, user.id.clone());
+                Ok(UserCtx {
+                    user_sub: user.id,
+                    credential: CodexCredential::ApiKey(cred.key),
+                })
+            }
+            Err(CodexError::Unauthorized { .. }) => Err(IdentityError::CredentialsExpired),
+            Err(e) => Err(IdentityError::Codex(e)),
+        }
+    }
+}
+
+/// Hex-encoded SHA-256 of a string, used as the validation-cache key so the
+/// plaintext key is never a map key.
+fn sha256_hex(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(s.as_bytes()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use shisho_db::connect_in_memory;
-    use shisho_db::repos::users::{OidcIdentity, find_or_create, get_codex_credential};
+    use shisho_db::repos::users::{
+        OidcIdentity, find_or_create, get_codex_credential, set_codex_credential,
+    };
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -234,5 +338,89 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, IdentityError::UnknownUser(_)));
+    }
+
+    /// Store a validated Codex credential for `user_id`.
+    async fn store_key(db: &shisho_db::DatabaseConnection, dek: &shisho_db::Dek, user_id: &str) {
+        set_codex_credential(db, user_id, "codex-user-42", "codex_dead_beef", dek, 1)
+            .await
+            .unwrap();
+    }
+
+    fn me_ok() -> wiremock::Mock {
+        Mock::given(method("GET"))
+            .and(path("/api/v1/auth/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(me_body()))
+    }
+
+    #[tokio::test]
+    async fn resolve_validates_via_me_once_within_ttl() {
+        let server = MockServer::start().await;
+        me_ok().expect(1).mount(&server).await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([3u8; 32]);
+        let user_id = a_user(&db).await;
+        store_key(&db, &dek, &user_id).await;
+
+        let identity = CodexIdentity::new(codex(&server), Duration::from_secs(300));
+        let first = identity.resolve(&db, &dek, &user_id).await.unwrap();
+        assert_eq!(first.user_sub, "codex-user-42");
+        assert!(
+            matches!(first.credential, CodexCredential::ApiKey(ref k) if k == "codex_dead_beef")
+        );
+
+        // Second resolve within the TTL is served from cache: no second /me
+        // (the mock's expect(1) is asserted on drop).
+        let second = identity.resolve(&db, &dek, &user_id).await.unwrap();
+        assert_eq!(second.user_sub, "codex-user-42");
+    }
+
+    #[tokio::test]
+    async fn resolve_revalidates_when_not_fresh() {
+        let server = MockServer::start().await;
+        // revalidate_after = 0 ⇒ every entry is immediately stale ⇒ each resolve
+        // re-validates against /me.
+        me_ok().expect(2).mount(&server).await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([3u8; 32]);
+        let user_id = a_user(&db).await;
+        store_key(&db, &dek, &user_id).await;
+
+        let identity = CodexIdentity::new(codex(&server), Duration::ZERO);
+        identity.resolve(&db, &dek, &user_id).await.unwrap();
+        identity.resolve(&db, &dek, &user_id).await.unwrap();
+        // expect(2) asserts the re-validation on drop.
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_401_to_credentials_expired() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/auth/me"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([3u8; 32]);
+        let user_id = a_user(&db).await;
+        store_key(&db, &dek, &user_id).await;
+
+        let identity = CodexIdentity::new(codex(&server), Duration::from_secs(300));
+        let err = identity.resolve(&db, &dek, &user_id).await.unwrap_err();
+        assert!(matches!(err, IdentityError::CredentialsExpired));
+        assert!(err.reauth_message().is_some(), "surfaces a re-auth message");
+    }
+
+    #[tokio::test]
+    async fn resolve_without_a_stored_credential_is_no_credential() {
+        let server = MockServer::start().await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([3u8; 32]);
+        let user_id = a_user(&db).await;
+
+        let identity = CodexIdentity::new(codex(&server), Duration::from_secs(300));
+        let err = identity.resolve(&db, &dek, &user_id).await.unwrap_err();
+        assert!(matches!(err, IdentityError::NoCredential));
+        assert!(err.reauth_message().is_none());
     }
 }

@@ -81,5 +81,6 @@ pub async fn build_app_state(cfg: &AppConfig) -> anyhow::Result<Arc<AppState>> {
         // Retained (not just used to open the DB) so request handlers can seal
         // the minted Codex key at sign-in.
         dek,
+        codex_identity: shisho_api::build_codex_identity(cfg),
     }))
 }

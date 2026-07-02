@@ -541,6 +541,8 @@ mod tests {
             session: SessionKeys::for_test(TEST_SESSION_SECRET),
             setup: Arc::new(crate::setup::SetupState::disabled()),
             dek: Some(shisho_db::Dek::from_bytes([5u8; 32])),
+            // The sign-in mint builds its own client; the resolver isn't needed.
+            codex_identity: None,
         })
     }
 

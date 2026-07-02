@@ -83,6 +83,57 @@ impl FromRequestParts<Arc<AppState>> for CurrentScope {
     }
 }
 
+/// Extractor yielding the request's resolved Codex context (`codex_user_sub` +
+/// the stored key), for handlers that call Codex on the user's behalf. Requires
+/// an authenticated user, at-rest encryption (to unseal the key), and a
+/// configured Codex. A revoked/expired stored key rejects with 401 so the client
+/// re-authenticates — which re-mints the key.
+pub struct CodexUserCtx(pub shisho_codex::UserCtx);
+
+impl FromRequestParts<Arc<AppState>> for CodexUserCtx {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        let user_id = parts
+            .extensions
+            .get::<AuthContext>()
+            .and_then(|c| c.user_id.clone())
+            .ok_or(AppError::Forbidden)?;
+        let dek = state.dek.as_ref().ok_or_else(|| {
+            AppError::Unavailable(
+                "at-rest encryption is disabled; Codex features are unavailable".into(),
+            )
+        })?;
+        let identity = state
+            .codex_identity
+            .as_ref()
+            .ok_or_else(|| AppError::Unavailable("Codex is not configured".into()))?;
+        identity
+            .resolve(&state.db, dek, &user_id)
+            .await
+            .map(CodexUserCtx)
+            .map_err(map_identity_error)
+    }
+}
+
+/// Map a Codex identity-resolution failure to the HTTP surface.
+/// `CredentialsExpired` becomes a 401 — the distinct re-auth signal, since
+/// re-authenticating re-mints the key; a missing credential is a 409 (sign in to
+/// mint one); anything else is internal.
+fn map_identity_error(err: shisho_services::codex_identity::IdentityError) -> AppError {
+    use shisho_services::codex_identity::IdentityError as IE;
+    match err {
+        IE::CredentialsExpired => AppError::Unauthorized,
+        IE::NoCredential => AppError::Conflict(
+            "no Codex credential is linked to this account; sign in to mint one".into(),
+        ),
+        other => AppError::Internal(anyhow::anyhow!("resolving codex identity: {other}")),
+    }
+}
+
 /// Resolve the caller to an admin user row, or reject with 403.
 ///
 /// - **Single-user mode** has exactly one operator, who is implicitly the admin.

@@ -57,6 +57,34 @@ pub struct AppState {
     /// configured. Needed at request time to seal the minted Codex key; `None`
     /// disables Codex-credential minting (a recoverable key must be encrypted).
     pub dek: Option<shisho_db::Dek>,
+    /// The Codex identity resolver (client + `/me` validation cache), present
+    /// only when `codex.base_url` is configured. Resolves each per-user request
+    /// to a `UserCtx`; `None` disables per-user Codex surfaces.
+    pub codex_identity: Option<Arc<shisho_services::codex_identity::CodexIdentity>>,
+}
+
+/// How long a stored Codex key stays trusted between `/me` re-validations, so a
+/// revocation propagates within this window.
+const CODEX_VALIDATION_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Build the Codex identity resolver from config: `Some` when `codex.base_url`
+/// is set, else `None` (per-user Codex surfaces are disabled). Kept here so the
+/// binary's `build_app_state` need not depend on `shisho-codex`/`shisho-services`
+/// directly.
+pub fn build_codex_identity(
+    cfg: &AppConfig,
+) -> Option<Arc<shisho_services::codex_identity::CodexIdentity>> {
+    if cfg.codex.base_url.is_empty() {
+        return None;
+    }
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .expect("building the Codex HTTP client");
+    let client = shisho_codex::CodexClient::new(&cfg.codex.base_url, http);
+    Some(Arc::new(
+        shisho_services::codex_identity::CodexIdentity::new(client, CODEX_VALIDATION_TTL),
+    ))
 }
 
 /// Build the application router.

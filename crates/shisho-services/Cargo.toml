@@ -7,6 +7,7 @@ authors.workspace = true
 description = "Domain services layered over the Codex/Tsundoku/MangaBaka clients and the database"
 
 [dependencies]
+shisho-cache = { workspace = true }
 shisho-codex = { workspace = true }
 shisho-db = { workspace = true }
 shisho-crypto = { workspace = true }
@@ -14,6 +15,8 @@ shisho-crypto = { workspace = true }
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+sha2.workspace = true
+hex.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

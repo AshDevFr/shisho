@@ -55,5 +55,6 @@ pub async fn test_state_with_registry(
         // Tests run against a plaintext in-memory DB; no DEK, so Codex minting
         // is skipped (the mint path is covered by the identity-broker tests).
         dek: None,
+        codex_identity: None,
     })
 }

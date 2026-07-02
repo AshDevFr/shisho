@@ -4042,14 +4042,18 @@ name = "shisho-services"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "hex",
  "reqwest 0.13.4",
+ "schemars 1.2.1",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "shisho-cache",
  "shisho-codex",
  "shisho-crypto",
  "shisho-db",
+ "shisho-ids",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

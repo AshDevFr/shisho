@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440004",
+      "libraryId": "550e8400-e29b-41d4-a716-446655440001",
+      "libraryName": "Manga",
+      "bookCount": 5,
+      "unreadCount": 3,
+      "metadata": {
+        "title": "Local Scan Doujin",
+        "summary": null,
+        "status": null,
+        "year": null,
+        "publisher": null,
+        "totalVolumeCount": null,
+        "totalChapterCount": null
+      },
+      "genres": [],
+      "tags": [],
+      "externalIds": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440014",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440004",
+          "source": "comicinfo",
+          "externalId": "doujin-local",
+          "externalUrl": null
+        }
+      ]
+    }
+  ],
+  "page": 2,
+  "pageSize": 100,
+  "total": 3,
+  "totalPages": 2
+}

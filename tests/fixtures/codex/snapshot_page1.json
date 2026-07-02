@@ -1,0 +1,84 @@
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "libraryId": "550e8400-e29b-41d4-a716-446655440001",
+      "libraryName": "Manga",
+      "bookCount": 11,
+      "unreadCount": 11,
+      "metadata": {
+        "title": "Sousou no Frieren",
+        "summary": "The adventure is over but life goes on for an elf mage just beginning to learn what living is all about.",
+        "status": "ended",
+        "year": 2020,
+        "publisher": "Shogakukan",
+        "totalVolumeCount": 14,
+        "totalChapterCount": null
+      },
+      "genres": [
+        { "id": "g-1", "name": "Fantasy" },
+        { "id": "g-2", "name": "Adventure" }
+      ],
+      "tags": [
+        { "id": "t-1", "name": "Award Winner" }
+      ],
+      "externalIds": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440010",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+          "source": "plugin:mangabaka",
+          "externalId": "112092",
+          "externalUrl": "https://mangabaka.dev/112092"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440011",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+          "source": "plugin:myanimelist",
+          "externalId": "126287",
+          "externalUrl": "https://myanimelist.net/manga/126287"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440012",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+          "source": "comicinfo",
+          "externalId": "frieren-local",
+          "externalUrl": null
+        }
+      ]
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "libraryId": "550e8400-e29b-41d4-a716-446655440001",
+      "libraryName": "Manga",
+      "bookCount": 14,
+      "unreadCount": 0,
+      "metadata": {
+        "title": "Dungeon Meshi",
+        "summary": "Adventurers cook and eat the monsters they slay in a deep dungeon.",
+        "status": "ended",
+        "year": 2014,
+        "publisher": "Enterbrain",
+        "totalVolumeCount": 14,
+        "totalChapterCount": null
+      },
+      "genres": [
+        { "id": "g-1", "name": "Fantasy" },
+        { "id": "g-3", "name": "Comedy" }
+      ],
+      "tags": [],
+      "externalIds": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440013",
+          "seriesId": "550e8400-e29b-41d4-a716-446655440003",
+          "source": "plugin:anilist",
+          "externalId": "86952",
+          "externalUrl": "https://anilist.co/manga/86952"
+        }
+      ]
+    }
+  ],
+  "page": 1,
+  "pageSize": 100,
+  "total": 3,
+  "totalPages": 2
+}

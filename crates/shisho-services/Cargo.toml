@@ -13,6 +13,7 @@ shisho-db = { workspace = true }
 shisho-crypto = { workspace = true }
 shisho-ids = { workspace = true }
 shisho-tsundoku = { workspace = true }
+shisho-mangabaka = { workspace = true }
 
 anyhow.workspace = true
 thiserror.workspace = true

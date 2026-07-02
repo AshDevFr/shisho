@@ -4057,6 +4057,7 @@ dependencies = [
  "shisho-crypto",
  "shisho-db",
  "shisho-ids",
+ "shisho-mangabaka",
  "shisho-tsundoku",
  "thiserror 2.0.18",
  "tokio",

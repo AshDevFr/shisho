@@ -63,14 +63,16 @@ impl Provider {
         }
     }
 
-    /// Complete the flow: exchange the code and resolve the user's identity.
+    /// Complete the flow: exchange the code, resolve the user's identity, and
+    /// return the raw access token alongside it (for a one-shot IdP-authorized
+    /// action such as Shisho's Codex key mint). The token is never persisted.
     pub async fn exchange(
         &self,
         http: &HttpClient,
         code: String,
         pkce_verifier: String,
         nonce: String,
-    ) -> anyhow::Result<OidcIdentity> {
+    ) -> anyhow::Result<(OidcIdentity, Option<String>)> {
         match self {
             Provider::Oidc(p) => p.exchange(http, code, pkce_verifier, nonce).await,
             Provider::OAuth2(p) => p.exchange(http, code, pkce_verifier).await,

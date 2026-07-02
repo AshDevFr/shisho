@@ -138,12 +138,14 @@ impl OAuth2Provider {
         })
     }
 
+    /// Returns the identity plus the raw access token, so a caller needing a
+    /// one-shot provider-authorized action can forward it once. Never persisted.
     pub async fn exchange(
         &self,
         http: &HttpClient,
         code: String,
         pkce_verifier: String,
-    ) -> anyhow::Result<OidcIdentity> {
+    ) -> anyhow::Result<(OidcIdentity, Option<String>)> {
         let mut client = BasicClient::new(ClientId::new(self.client_id.clone()))
             .set_auth_uri(AuthUrl::new(self.auth_url.clone())?)
             .set_token_uri(TokenUrl::new(self.token_url.clone())?)
@@ -176,7 +178,7 @@ impl OAuth2Provider {
             "userinfo for provider `{}` had no subject/id",
             self.name
         );
-        Ok(identity)
+        Ok((identity, Some(access_token.clone())))
     }
 
     async fn fetch(&self, http: &HttpClient, url: &str, token: &str) -> anyhow::Result<Value> {

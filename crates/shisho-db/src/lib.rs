@@ -14,7 +14,7 @@ pub mod entities;
 pub mod keys;
 pub mod repos;
 
-pub use sea_orm::DatabaseConnection;
+pub use sea_orm::{DatabaseConnection, DbErr};
 
 // Re-export the common entry points so callers use `shisho_db::connect(..)` etc.
 pub use conn::{connect, connect_in_memory, run_migrations};

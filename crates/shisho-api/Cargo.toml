@@ -16,9 +16,11 @@ test-util = ["shisho-auth/test-util", "dep:tempfile"]
 
 [dependencies]
 shisho-auth = { workspace = true }
+shisho-codex = { workspace = true }
 shisho-config = { workspace = true }
 shisho-db = { workspace = true }
 shisho-oauth = { workspace = true }
+shisho-services = { workspace = true }
 
 axum.workspace = true
 axum-extra.workspace = true
@@ -35,6 +37,7 @@ chrono.workspace = true
 uuid.workspace = true
 subtle.workspace = true
 tokio.workspace = true
+reqwest.workspace = true
 time = "0.3"
 percent-encoding = "2"
 

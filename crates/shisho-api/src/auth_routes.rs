@@ -179,7 +179,7 @@ async fn callback(
         .get(&provider_name)
         .ok_or_else(|| AppError::NotFound(format!("unknown auth provider: {provider_name}")))?;
 
-    let identity = provider
+    let (identity, passthrough) = provider
         .exchange(
             state.providers.http(),
             code,
@@ -193,6 +193,12 @@ async fn callback(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("provisioning user: {e}")))?;
 
+    // Best-effort: mint (or refresh) the dedicated least-privilege Codex key by
+    // forwarding the one-shot IdP token exactly once. Never blocks sign-in.
+    if let Some(idp_token) = passthrough {
+        mint_codex_key(&state, &user.id, idp_token).await;
+    }
+
     // Issue the session cookie and return the browser to the app.
     let token = state
         .session
@@ -200,6 +206,49 @@ async fn callback(
         .map_err(|e| AppError::Internal(e.context("issuing session")))?;
     let jar = jar.add(build_session_cookie(&state, token));
     Ok((jar, Redirect::to(&login_state.redirect_to)))
+}
+
+/// Best-effort Codex key mint at sign-in. Mints a dedicated least-privilege key
+/// with the one-shot IdP token and stores it sealed. Requires at-rest
+/// encryption (a DEK to seal with) and a configured Codex; any failure is logged
+/// and sign-in proceeds — the key can be regenerated later. Never propagates an
+/// error, and never logs the token.
+async fn mint_codex_key(state: &AppState, user_id: &str, idp_token: String) {
+    let Some(dek) = state.dek.as_ref() else {
+        tracing::debug!("at-rest encryption disabled; skipping Codex key mint");
+        return;
+    };
+    if state.cfg.codex.base_url.is_empty() {
+        tracing::debug!("codex.base_url unset; skipping Codex key mint");
+        return;
+    }
+    let http = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not build the Codex HTTP client; skipping mint");
+            return;
+        }
+    };
+    let codex = shisho_codex::CodexClient::new(&state.cfg.codex.base_url, http);
+    match shisho_services::codex_identity::mint_and_store(
+        &codex,
+        &state.db,
+        dek,
+        state.cfg.encryption.key_version,
+        user_id,
+        &shisho_codex::CodexCredential::Bearer(idp_token),
+        "shisho",
+    )
+    .await
+    {
+        Ok(sub) => tracing::info!(user_id, codex_user_sub = %sub, "minted a Codex key at sign-in"),
+        Err(e) => {
+            tracing::warn!(user_id, error = %e, "Codex key mint failed; sign-in proceeds without it")
+        }
+    }
 }
 
 /// Clear the session cookie (logout). In-flight login state is dropped too so a
@@ -462,6 +511,97 @@ mod tests {
             .filter(|u| u.provider.as_deref() == Some("mock"))
             .count();
         assert_eq!(provisioned, 1, "same identity must not duplicate");
+    }
+
+    /// A DEK-enabled state whose `mock` OAuth2 provider *and* Codex both point at
+    /// `server`, so a full sign-in exercises the Codex key mint hook.
+    async fn state_for_codex(server: &MockServer) -> Arc<crate::AppState> {
+        let mut cfg = AppConfig::default();
+        cfg.auth.mode = AuthMode::MultiUser;
+        cfg.codex.base_url = server.uri();
+        let pcfg = ProviderConfig {
+            name: "mock".into(),
+            kind: ProviderKind::Oauth2,
+            client_id: "cid".into(),
+            client_secret: Some("csecret".into()),
+            auth_url: Some(format!("{}/authorize", server.uri())),
+            token_url: Some(format!("{}/token", server.uri())),
+            userinfo_url: Some(format!("{}/userinfo", server.uri())),
+            ..Default::default()
+        };
+        let provider = Provider::OAuth2(Box::new(
+            OAuth2Provider::from_config(&pcfg, "http://localhost/auth/callback/mock".into())
+                .unwrap(),
+        ));
+        cfg.auth.providers.push(pcfg);
+        Arc::new(crate::AppState {
+            db: crate::test_util::test_db().await,
+            cfg,
+            providers: Arc::new(ProviderRegistry::from_providers(vec![provider])),
+            session: SessionKeys::for_test(TEST_SESSION_SECRET),
+            setup: Arc::new(crate::setup::SetupState::disabled()),
+            dek: Some(shisho_db::Dek::from_bytes([5u8; 32])),
+        })
+    }
+
+    /// Stub Codex's mint + `/me` on `server`.
+    async fn mock_codex(server: &MockServer) {
+        Mock::given(method("POST"))
+            .and(path("/api/v1/api-keys"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "key": "codex_dead_beef",
+                "id": "codex-key-1",
+                "name": "shisho",
+                "keyPrefix": "codex_dead",
+                "isActive": true,
+                "expiresAt": null,
+                "createdAt": "2026-07-01T00:00:00Z"
+            })))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/auth/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "codex-user-42",
+                "username": "ada",
+                "email": "a@example.com",
+                "role": "user",
+                "emailVerified": true,
+                "permissions": ["series:read", "libraries:read"]
+            })))
+            .mount(server)
+            .await;
+    }
+
+    /// End-to-end: a full OIDC sign-in forwards the IdP token to Codex, mints the
+    /// least-privilege key, and stores it sealed against the provisioned user.
+    #[tokio::test]
+    async fn sign_in_mints_and_stores_the_codex_key() {
+        let server = MockServer::start().await;
+        mock_provider(&server, "sub-1", "a@example.com", "Ada").await;
+        mock_codex(&server).await;
+        let state = state_for_codex(&server).await;
+        let app = crate::router(state.clone());
+
+        let resp = run_login(&app, "sub-1").await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+
+        // The callback linked the user to the resolved Codex sub and stored the
+        // minted key sealed (recoverable under the state's DEK).
+        let linked = shisho_db::repos::users::find_by_codex_user_sub(&state.db, "codex-user-42")
+            .await
+            .unwrap()
+            .expect("user linked to the codex sub");
+        let cred = shisho_db::repos::users::get_codex_credential(
+            &state.db,
+            &linked.id,
+            state.dek.as_ref().unwrap(),
+        )
+        .await
+        .unwrap()
+        .expect("a stored codex credential");
+        assert_eq!(cred.key, "codex_dead_beef");
+        assert_eq!(cred.codex_user_sub, "codex-user-42");
     }
 
     #[tokio::test]

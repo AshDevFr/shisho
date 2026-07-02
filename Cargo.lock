@@ -3835,14 +3835,17 @@ dependencies = [
  "http-body-util",
  "mime_guess",
  "percent-encoding",
+ "reqwest 0.13.4",
  "rust-embed",
  "sea-orm",
  "serde",
  "serde_json",
  "shisho-auth",
+ "shisho-codex",
  "shisho-config",
  "shisho-db",
  "shisho-oauth",
+ "shisho-services",
  "subtle",
  "tempfile",
  "thiserror 2.0.18",
@@ -4032,6 +4035,22 @@ dependencies = [
  "shisho-auth",
  "shisho-db",
  "tokio",
+]
+
+[[package]]
+name = "shisho-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest 0.13.4",
+ "serde_json",
+ "shisho-codex",
+ "shisho-crypto",
+ "shisho-db",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "wiremock",
 ]
 
 [[package]]

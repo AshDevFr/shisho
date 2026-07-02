@@ -118,13 +118,16 @@ impl OidcProvider {
 
     /// Exchange the code, verify the ID token (signature/iss/aud/exp/nonce),
     /// and map the verified claims to an identity.
+    /// Returns the verified identity plus the raw access token, so a caller
+    /// that needs a one-shot IdP-authorized action (Shisho's Codex key mint)
+    /// can forward it exactly once. The token is never persisted.
     pub async fn exchange(
         &self,
         http: &HttpClient,
         code: String,
         pkce_verifier: String,
         nonce: String,
-    ) -> anyhow::Result<OidcIdentity> {
+    ) -> anyhow::Result<(OidcIdentity, Option<String>)> {
         let client = CoreClient::from_provider_metadata(
             self.metadata.clone(),
             self.client_id.clone(),
@@ -163,14 +166,19 @@ impl OidcProvider {
             .resolve_groups(http, id_token, token_response.access_token())
             .await;
 
-        Ok(OidcIdentity {
-            provider: self.name.clone(),
-            subject,
-            email,
-            display_name,
-            avatar_url,
-            groups,
-        })
+        let access_token = token_response.access_token().secret().clone();
+
+        Ok((
+            OidcIdentity {
+                provider: self.name.clone(),
+                subject,
+                email,
+                display_name,
+                avatar_url,
+                groups,
+            },
+            Some(access_token),
+        ))
     }
 
     /// Resolve group memberships for admin mapping. Reads the group claim from

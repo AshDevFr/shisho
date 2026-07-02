@@ -12,6 +12,7 @@ members = [
     "crates/shisho-mangabaka",
     "crates/shisho-mcp",
     "crates/shisho-oauth",
+    "crates/shisho-services",
     "crates/shisho-tsundoku",
     "migration",
 ]
@@ -43,6 +44,7 @@ shisho-ids = { path = "crates/shisho-ids" }
 shisho-mangabaka = { path = "crates/shisho-mangabaka" }
 shisho-mcp = { path = "crates/shisho-mcp" }
 shisho-oauth = { path = "crates/shisho-oauth" }
+shisho-services = { path = "crates/shisho-services" }
 shisho-tsundoku = { path = "crates/shisho-tsundoku" }
 migration = { path = "migration" }
 

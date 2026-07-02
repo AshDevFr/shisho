@@ -1,0 +1,22 @@
+[package]
+name = "shisho-services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Domain services layered over the Codex/Tsundoku/MangaBaka clients and the database"
+
+[dependencies]
+shisho-codex = { workspace = true }
+shisho-db = { workspace = true }
+shisho-crypto = { workspace = true }
+
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+wiremock = "0.6"
+serde_json.workspace = true
+reqwest.workspace = true

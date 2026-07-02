@@ -33,6 +33,9 @@ pub async fn ensure_local_user(db: &DatabaseConnection) -> Result<String, DbErr>
             created_at: Set(chrono::Utc::now().to_rfc3339()),
             last_seen: Set(None),
             deactivated_at: Set(None),
+            codex_user_sub: Set(None),
+            codex_key_ciphertext: Set(None),
+            codex_key_version: Set(None),
         }
         .insert(db)
         .await?;
@@ -118,6 +121,9 @@ mod tests {
                 created_at: Set(chrono::Utc::now().to_rfc3339()),
                 last_seen: Set(None),
                 deactivated_at: Set(None),
+                codex_user_sub: Set(None),
+                codex_key_ciphertext: Set(None),
+                codex_key_version: Set(None),
             }
             .insert(&db)
             .await

@@ -53,6 +53,10 @@ pub struct AppState {
     pub session: SessionKeys,
     /// First-run setup wizard state (one-shot token).
     pub setup: Arc<setup::SetupState>,
+    /// The data-encryption key, present only when at-rest encryption is
+    /// configured. Needed at request time to seal the minted Codex key; `None`
+    /// disables Codex-credential minting (a recoverable key must be encrypted).
+    pub dek: Option<shisho_db::Dek>,
 }
 
 /// Build the application router.

@@ -37,11 +37,24 @@ use rand::rngs::SysRng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A protected resource a key may be scoped to. `Example` is the template's
-/// placeholder data resource; `Keys` gates API-key administration.
+/// placeholder data resource; `Keys` gates API-key administration. The
+/// remainder are the MCP domain surfaces, one per tool group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Resource {
     Example,
     Keys,
+    /// The candidate pools (`get_candidates`).
+    Candidates,
+    /// The single-series merged view (`lookup`).
+    Lookup,
+    /// The caller's own library (`search_library`, `list_libraries`).
+    Library,
+    /// The recommendation verdict log (`record_verdict`, `record_feedback`).
+    Verdicts,
+    /// The taste profile (`get_profile`, `propose_profile_update`).
+    Profile,
+    /// Backend/pool health (`status`).
+    Status,
 }
 
 impl Resource {
@@ -49,6 +62,12 @@ impl Resource {
         match self {
             Resource::Example => "example",
             Resource::Keys => "keys",
+            Resource::Candidates => "candidates",
+            Resource::Lookup => "lookup",
+            Resource::Library => "library",
+            Resource::Verdicts => "verdicts",
+            Resource::Profile => "profile",
+            Resource::Status => "status",
         }
     }
 
@@ -56,6 +75,12 @@ impl Resource {
         match s {
             "example" => Some(Resource::Example),
             "keys" => Some(Resource::Keys),
+            "candidates" => Some(Resource::Candidates),
+            "lookup" => Some(Resource::Lookup),
+            "library" => Some(Resource::Library),
+            "verdicts" => Some(Resource::Verdicts),
+            "profile" => Some(Resource::Profile),
+            "status" => Some(Resource::Status),
             _ => None,
         }
     }
@@ -107,6 +132,13 @@ pub const VALID_SCOPES: &[&str] = &[
     "example:write",
     "example:delete",
     "keys:manage",
+    "candidates:read",
+    "lookup:read",
+    "library:read",
+    "verdicts:write",
+    "profile:read",
+    "profile:write",
+    "status:read",
 ];
 
 impl Scope {
@@ -126,6 +158,34 @@ impl Scope {
         resource: Resource::Keys,
         action: Action::Manage,
     };
+    pub const CANDIDATES_READ: Scope = Scope {
+        resource: Resource::Candidates,
+        action: Action::Read,
+    };
+    pub const LOOKUP_READ: Scope = Scope {
+        resource: Resource::Lookup,
+        action: Action::Read,
+    };
+    pub const LIBRARY_READ: Scope = Scope {
+        resource: Resource::Library,
+        action: Action::Read,
+    };
+    pub const VERDICTS_WRITE: Scope = Scope {
+        resource: Resource::Verdicts,
+        action: Action::Write,
+    };
+    pub const PROFILE_READ: Scope = Scope {
+        resource: Resource::Profile,
+        action: Action::Read,
+    };
+    pub const PROFILE_WRITE: Scope = Scope {
+        resource: Resource::Profile,
+        action: Action::Write,
+    };
+    pub const STATUS_READ: Scope = Scope {
+        resource: Resource::Status,
+        action: Action::Read,
+    };
 
     /// Every valid scope. Used by the `admin` alias and the config-key
     /// superuser path.
@@ -135,6 +195,13 @@ impl Scope {
             Scope::EXAMPLE_WRITE,
             Scope::EXAMPLE_DELETE,
             Scope::KEYS_MANAGE,
+            Scope::CANDIDATES_READ,
+            Scope::LOOKUP_READ,
+            Scope::LIBRARY_READ,
+            Scope::VERDICTS_WRITE,
+            Scope::PROFILE_READ,
+            Scope::PROFILE_WRITE,
+            Scope::STATUS_READ,
         ]
     }
 

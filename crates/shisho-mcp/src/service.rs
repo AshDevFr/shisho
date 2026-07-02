@@ -55,7 +55,7 @@ impl McpService {
     /// assume.
     fn scopes_for(&self, context: &RequestContext<RoleServer>) -> Result<Vec<Scope>, ErrorData> {
         match &self.identity {
-            McpIdentity::Local(scopes) => Ok(scopes.clone()),
+            McpIdentity::Local(ctx) => Ok(ctx.scopes.clone()),
             McpIdentity::PerRequest => context
                 .extensions
                 .get::<axum::http::request::Parts>()
@@ -145,9 +145,19 @@ mod tests {
         ().serve(client_io).await.expect("client initialize")
     }
 
+    /// A `Local` identity carrying the given scopes and no user (the shape the
+    /// stdio superuser and scoped-key paths produce).
+    fn local(scopes: Vec<Scope>) -> McpIdentity {
+        McpIdentity::Local(shisho_api::middleware::AuthContext {
+            key_id: None,
+            user_id: None,
+            scopes,
+        })
+    }
+
     async fn admin_client() -> RunningService<RoleClient, ()> {
         let state = test_state(Default::default()).await;
-        client_with_state(state, McpIdentity::Local(Scope::all())).await
+        client_with_state(state, local(Scope::all())).await
     }
 
     const ALL_TOOLS: [&str; 2] = ["echo", "ping"];
@@ -197,7 +207,7 @@ mod tests {
     #[tokio::test]
     async fn every_registered_tool_declares_a_scope() {
         let state = test_state(Default::default()).await;
-        let service = McpService::new(state, McpIdentity::Local(Scope::all()));
+        let service = McpService::new(state, local(Scope::all()));
         for tool in service.tools() {
             assert!(
                 required_scope(&tool.name).is_some(),
@@ -210,7 +220,7 @@ mod tests {
     #[tokio::test]
     async fn read_scope_cannot_call_write_tools() {
         let state = test_state(Default::default()).await;
-        let client = client_with_state(state, McpIdentity::Local(vec![Scope::EXAMPLE_READ])).await;
+        let client = client_with_state(state, local(vec![Scope::EXAMPLE_READ])).await;
 
         // The read tool works.
         let result = client

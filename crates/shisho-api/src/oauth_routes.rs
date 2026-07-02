@@ -554,6 +554,27 @@ fn resource_meta(resource: shisho_auth::keys::Resource) -> (&'static str, &'stat
     match resource {
         Resource::Example => ("Example data", "The application's example resource"),
         Resource::Keys => ("API keys", "Create and revoke access credentials"),
+        Resource::Candidates => (
+            "Recommendation candidates",
+            "Generate candidate pools from your library and the catalog",
+        ),
+        Resource::Lookup => (
+            "Series lookup",
+            "Look up the full picture of a single series",
+        ),
+        Resource::Library => ("Your library", "Search and list your own Codex library"),
+        Resource::Verdicts => (
+            "Recommendation verdicts",
+            "Record recommendation decisions and feedback",
+        ),
+        Resource::Profile => (
+            "Taste profile",
+            "Read your taste profile and propose updates to it",
+        ),
+        Resource::Status => (
+            "Service status",
+            "Check backend reachability and data freshness",
+        ),
     }
 }
 

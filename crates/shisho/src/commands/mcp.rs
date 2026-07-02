@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use rmcp::ServiceExt;
 use shisho_mcp::McpService;
-use shisho_mcp::auth::{McpIdentity, resolve_stdio_scopes};
+use shisho_mcp::auth::{McpIdentity, resolve_stdio_identity};
 
 pub async fn stdio(config_path: PathBuf) -> anyhow::Result<()> {
     let cfg = shisho_config::load(&config_path)
@@ -19,10 +19,10 @@ pub async fn stdio(config_path: PathBuf) -> anyhow::Result<()> {
     let state = super::build_app_state(&cfg).await?;
     // Verify the key (or local-trust opt-in) before serving, so a missing/invalid
     // credential is a clear startup error rather than a failure on every call.
-    let scopes = resolve_stdio_scopes(&state).await?;
+    let identity = resolve_stdio_identity(&state).await?;
 
     tracing::info!("serving MCP over stdio");
-    let service = McpService::new(state, McpIdentity::Local(scopes));
+    let service = McpService::new(state, McpIdentity::Local(identity));
     let running = service
         .serve(rmcp::transport::stdio())
         .await

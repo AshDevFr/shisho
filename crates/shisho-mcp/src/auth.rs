@@ -13,7 +13,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use shisho_api::AppState;
 use shisho_api::error::AppError;
-use shisho_api::middleware::{authenticate, bearer_token};
+use shisho_api::middleware::{AuthContext, authenticate, bearer_token};
 use shisho_auth::keys::{Scope, allows};
 use shisho_config::AuthMode;
 
@@ -23,12 +23,15 @@ pub const STDIO_KEY_ENV: &str = "SHISHO_API_KEY";
 /// How [`crate::McpService`] learns who is calling.
 #[derive(Clone, Debug)]
 pub enum McpIdentity {
-    /// Fixed at process start (stdio): the key was verified before serving, or
-    /// `mcp.stdio_no_auth = true` opted into local trust.
-    Local(Vec<Scope>),
+    /// Fixed at process start (stdio): the caller's verified [`AuthContext`]
+    /// (scopes plus the `user_id` a per-user Codex tool resolves against), or
+    /// the local-trust superuser context when `mcp.stdio_no_auth = true`. The
+    /// full context — not just scopes — so `shisho mcp stdio` can resolve a
+    /// `UserCtx` for the domain tools.
+    Local(AuthContext),
     /// HTTP transport: [`require_mcp_auth`] authenticates every request and
-    /// stores the verified [`shisho_api::middleware::AuthContext`] in the request
-    /// extensions, where the service reads it back per tool call.
+    /// stores the verified [`AuthContext`] in the request extensions, where the
+    /// service reads it back per tool call.
     PerRequest,
 }
 
@@ -38,28 +41,34 @@ pub fn scopes_allow(scopes: &[Scope], required: Scope) -> bool {
     allows(scopes, required.resource, required.action)
 }
 
-/// Resolve the identity for `shisho mcp stdio` before serving.
+/// Resolve the caller identity for `shisho mcp stdio` before serving.
 ///
-/// Order: `mcp.stdio_no_auth = true` grants local-trust superuser (the full
-/// scope set); otherwise the key comes from `SHISHO_API_KEY`, falling back to
-/// `auth.api_key` from the config (the process already read the config file, so
-/// the key in it is within the same trust boundary). No key, or an invalid one,
-/// is a startup error: failing loudly here beats every tool call failing later.
-pub async fn resolve_stdio_scopes(state: &AppState) -> anyhow::Result<Vec<Scope>> {
+/// Order: `mcp.stdio_no_auth = true` grants a local-trust superuser context
+/// (full scopes, no user); otherwise the key comes from `SHISHO_API_KEY`,
+/// falling back to `auth.api_key` from the config (the process already read the
+/// config file, so the key in it is within the same trust boundary). No key, or
+/// an invalid one, is a startup error: failing loudly here beats every tool call
+/// failing later. The returned context carries the key's `user_id` (when the key
+/// is user-owned), which per-user Codex tools resolve their `UserCtx` against.
+pub async fn resolve_stdio_identity(state: &AppState) -> anyhow::Result<AuthContext> {
     let env_key = std::env::var(STDIO_KEY_ENV)
         .ok()
         .filter(|k| !k.trim().is_empty());
-    resolve_stdio_scopes_with_key(state, env_key).await
+    resolve_stdio_identity_with_key(state, env_key).await
 }
 
-/// [`resolve_stdio_scopes`] with the environment read factored out, so tests
+/// [`resolve_stdio_identity`] with the environment read factored out, so tests
 /// stay deterministic under parallel execution (process env is global).
-async fn resolve_stdio_scopes_with_key(
+async fn resolve_stdio_identity_with_key(
     state: &AppState,
     env_key: Option<String>,
-) -> anyhow::Result<Vec<Scope>> {
+) -> anyhow::Result<AuthContext> {
     if state.cfg.mcp.stdio_no_auth {
-        return Ok(Scope::all());
+        return Ok(AuthContext {
+            key_id: None,
+            user_id: None,
+            scopes: Scope::all(),
+        });
     }
     let key = env_key.or_else(|| state.cfg.auth.api_key.clone());
     let Some(key) = key else {
@@ -70,7 +79,7 @@ async fn resolve_stdio_scopes_with_key(
         );
     };
     match authenticate(state, &key).await {
-        Ok(ctx) => Ok(ctx.scopes),
+        Ok(ctx) => Ok(ctx),
         Err(AppError::Unauthorized) => anyhow::bail!(
             "the API key provided via {STDIO_KEY_ENV} (or auth.api_key) is not valid; \
              create one at /api/v1/keys, or opt into local trust with mcp.stdio_no_auth = true"
@@ -132,15 +141,15 @@ mod tests {
         cfg.mcp.stdio_no_auth = true;
         let state = test_state(cfg).await;
 
-        let scopes = resolve_stdio_scopes_with_key(&state, None).await.unwrap();
-        assert_eq!(scopes, Scope::all());
+        let ctx = resolve_stdio_identity_with_key(&state, None).await.unwrap();
+        assert_eq!(ctx.scopes, Scope::all());
     }
 
     #[tokio::test]
     async fn stdio_refuses_without_key_by_default() {
         let state = test_state(Default::default()).await;
 
-        let err = resolve_stdio_scopes_with_key(&state, None)
+        let err = resolve_stdio_identity_with_key(&state, None)
             .await
             .unwrap_err()
             .to_string();
@@ -153,10 +162,10 @@ mod tests {
         let state = test_state(Default::default()).await;
         let (key, _) = seed_key(&state.db, "ro", &[Scope::EXAMPLE_READ], None).await;
 
-        let scopes = resolve_stdio_scopes_with_key(&state, Some(key))
+        let ctx = resolve_stdio_identity_with_key(&state, Some(key))
             .await
             .unwrap();
-        assert_eq!(scopes, vec![Scope::EXAMPLE_READ]);
+        assert_eq!(ctx.scopes, vec![Scope::EXAMPLE_READ]);
     }
 
     #[tokio::test]
@@ -165,9 +174,9 @@ mod tests {
         cfg.auth.api_key = Some("shisho_config_secret".into());
         let state = test_state(cfg).await;
 
-        let scopes = resolve_stdio_scopes_with_key(&state, None).await.unwrap();
+        let ctx = resolve_stdio_identity_with_key(&state, None).await.unwrap();
         assert_eq!(
-            scopes,
+            ctx.scopes,
             Scope::all(),
             "config key carries the full scope set"
         );
@@ -177,7 +186,7 @@ mod tests {
     async fn stdio_invalid_key_is_a_startup_error() {
         let state = test_state(Default::default()).await;
 
-        let err = resolve_stdio_scopes_with_key(&state, Some("shisho_bogus".into()))
+        let err = resolve_stdio_identity_with_key(&state, Some("shisho_bogus".into()))
             .await
             .unwrap_err()
             .to_string();

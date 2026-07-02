@@ -8,3 +8,4 @@ pub mod library_snapshot;
 pub mod metadata;
 pub mod read_state;
 pub mod tsundoku_cache;
+pub mod verdicts;

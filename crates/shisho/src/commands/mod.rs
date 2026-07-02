@@ -72,6 +72,10 @@ pub async fn build_app_state(cfg: &AppConfig) -> anyhow::Result<Arc<AppState>> {
         );
     }
 
+    let services = shisho_api::build_services(cfg, db.clone())
+        .await
+        .context("building the domain services")?;
+
     Ok(Arc::new(AppState {
         db,
         cfg: cfg.clone(),
@@ -82,5 +86,6 @@ pub async fn build_app_state(cfg: &AppConfig) -> anyhow::Result<Arc<AppState>> {
         // the minted Codex key at sign-in.
         dek,
         codex_identity: shisho_api::build_codex_identity(cfg),
+        services,
     }))
 }

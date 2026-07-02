@@ -56,5 +56,6 @@ pub async fn test_state_with_registry(
         // is skipped (the mint path is covered by the identity-broker tests).
         dek: None,
         codex_identity: None,
+        services: None,
     })
 }

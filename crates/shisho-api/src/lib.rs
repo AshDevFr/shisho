@@ -61,6 +61,11 @@ pub struct AppState {
     /// only when `codex.base_url` is configured. Resolves each per-user request
     /// to a `UserCtx`; `None` disables per-user Codex surfaces.
     pub codex_identity: Option<Arc<shisho_services::codex_identity::CodexIdentity>>,
+    /// The domain service registry (library snapshot, tsundoku cache, metadata
+    /// backbone, sweeps) the MCP tools adapt over. Present on the same
+    /// condition as `codex_identity` — the domain surface needs the caller's
+    /// Codex library — so `Some` iff `codex.base_url` is configured.
+    pub services: Option<shisho_services::Services>,
 }
 
 /// How long a stored Codex key stays trusted between `/me` re-validations, so a
@@ -85,6 +90,53 @@ pub fn build_codex_identity(
     Some(Arc::new(
         shisho_services::codex_identity::CodexIdentity::new(client, CODEX_VALIDATION_TTL),
     ))
+}
+
+/// Build the domain [`shisho_services::Services`] registry from config and the
+/// shared DB handle: the Codex/Tsundoku clients, the MangaBaka backbone (with
+/// any on-disk dump loaded best-effort — download/refresh stay the scheduler's
+/// job), and the SWR caches. `Some` on the same condition as
+/// [`build_codex_identity`] (the domain tools need the caller's Codex library),
+/// so the two stay in lockstep. Kept here so `build_app_state` need not depend
+/// on the client crates directly.
+pub async fn build_services(
+    cfg: &AppConfig,
+    db: sea_orm::DatabaseConnection,
+) -> anyhow::Result<Option<shisho_services::Services>> {
+    use anyhow::Context;
+
+    if cfg.codex.base_url.is_empty() {
+        return Ok(None);
+    }
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .context("building the domain HTTP client")?;
+
+    let codex = shisho_codex::CodexClient::new(&cfg.codex.base_url, http.clone());
+    let tsundoku = shisho_tsundoku::TsundokuClient::new(
+        &cfg.tsundoku.base_url,
+        cfg.tsundoku.admin_bearer.clone(),
+        http,
+    );
+    let mangabaka = std::sync::Arc::new(
+        shisho_mangabaka::MangabakaProvider::new(&cfg.mangabaka, cfg.database.mangabaka_dir())
+            .context("building the MangaBaka provider")?,
+    );
+    // Serve an existing dump immediately if one is on disk; a missing dump is
+    // fine (API-fallback / cold until the scheduler refreshes it).
+    if mangabaka.load_existing_dump().await {
+        tracing::info!("loaded the on-disk MangaBaka dump");
+    }
+
+    Ok(Some(shisho_services::Services::new(
+        codex,
+        tsundoku,
+        mangabaka,
+        db,
+        &cfg.cache,
+        cfg.tsundoku.owned_prefilter,
+    )))
 }
 
 /// Build the application router.

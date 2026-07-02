@@ -544,6 +544,9 @@ mod tests {
                     std::time::Duration::from_secs(300),
                 ),
             )),
+            // These auth-route tests exercise sign-in/mint, not the domain
+            // tools, so the service registry is not needed here.
+            services: None,
         })
     }
 

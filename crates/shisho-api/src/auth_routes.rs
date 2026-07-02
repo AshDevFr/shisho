@@ -208,43 +208,40 @@ async fn callback(
     Ok((jar, Redirect::to(&login_state.redirect_to)))
 }
 
-/// Best-effort Codex key mint at sign-in. Mints a dedicated least-privilege key
-/// with the one-shot IdP token and stores it sealed. Requires at-rest
-/// encryption (a DEK to seal with) and a configured Codex; any failure is logged
-/// and sign-in proceeds — the key can be regenerated later. Never propagates an
-/// error, and never logs the token.
+/// Best-effort Codex key upkeep at sign-in. Ensures the user has a usable
+/// least-privilege key, minting one only when none is stored or the stored one
+/// was revoked — so a normal sign-in does not orphan a fresh key in Codex on
+/// every visit, while a revoked key recovers. Requires at-rest encryption (a DEK
+/// to seal with) and a configured Codex; any failure is logged and sign-in
+/// proceeds. Never propagates an error, and never logs the token.
 async fn mint_codex_key(state: &AppState, user_id: &str, idp_token: String) {
+    use shisho_services::codex_identity::KeyOutcome;
+
     let Some(dek) = state.dek.as_ref() else {
         tracing::debug!("at-rest encryption disabled; skipping Codex key mint");
         return;
     };
-    if state.cfg.codex.base_url.is_empty() {
-        tracing::debug!("codex.base_url unset; skipping Codex key mint");
+    let Some(identity) = state.codex_identity.as_ref() else {
+        tracing::debug!("codex not configured; skipping Codex key mint");
         return;
-    }
-    let http = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(client) => client,
-        Err(e) => {
-            tracing::warn!(error = %e, "could not build the Codex HTTP client; skipping mint");
-            return;
-        }
     };
-    let codex = shisho_codex::CodexClient::new(&state.cfg.codex.base_url, http);
-    match shisho_services::codex_identity::mint_and_store(
-        &codex,
-        &state.db,
-        dek,
-        state.cfg.encryption.key_version,
-        user_id,
-        &shisho_codex::CodexCredential::Bearer(idp_token),
-        "shisho",
-    )
-    .await
+    match identity
+        .ensure_key(
+            &state.db,
+            dek,
+            state.cfg.encryption.key_version,
+            user_id,
+            &shisho_codex::CodexCredential::Bearer(idp_token),
+            "shisho",
+        )
+        .await
     {
-        Ok(sub) => tracing::info!(user_id, codex_user_sub = %sub, "minted a Codex key at sign-in"),
+        Ok(KeyOutcome::Kept) => {
+            tracing::debug!(user_id, "existing Codex key is still valid; not re-minting")
+        }
+        Ok(KeyOutcome::Minted(sub)) => {
+            tracing::info!(user_id, codex_user_sub = %sub, "minted a Codex key at sign-in")
+        }
         Err(e) => {
             tracing::warn!(user_id, error = %e, "Codex key mint failed; sign-in proceeds without it")
         }
@@ -541,8 +538,12 @@ mod tests {
             session: SessionKeys::for_test(TEST_SESSION_SECRET),
             setup: Arc::new(crate::setup::SetupState::disabled()),
             dek: Some(shisho_db::Dek::from_bytes([5u8; 32])),
-            // The sign-in mint builds its own client; the resolver isn't needed.
-            codex_identity: None,
+            codex_identity: Some(Arc::new(
+                shisho_services::codex_identity::CodexIdentity::new(
+                    shisho_codex::CodexClient::new(&server.uri(), reqwest::Client::new()),
+                    std::time::Duration::from_secs(300),
+                ),
+            )),
         })
     }
 

@@ -161,6 +161,73 @@ impl CodexIdentity {
             Err(e) => Err(IdentityError::Codex(e)),
         }
     }
+
+    /// Mint a replacement key and swap it in atomically. Mint first, then write
+    /// the new ciphertext (a single UPDATE via [`mint_and_store`]), then drop the
+    /// old validation-cache entry. The old key is never cleared before the new
+    /// one is stored, so a partial failure never leaves the user with no usable
+    /// key. `authz` is a fresh mint authorization (the stored read-only key
+    /// cannot mint), so callers pass the IdP bearer or a pasted `api-keys:write`
+    /// key. Returns the resolved `codex_user_sub`.
+    pub async fn regenerate(
+        &self,
+        db: &DatabaseConnection,
+        dek: &Dek,
+        kek_version: u32,
+        user_id: &str,
+        authz: &CodexCredential,
+        key_name: &str,
+    ) -> Result<String, IdentityError> {
+        // Capture the outgoing key's cache key before the swap so we can drop it.
+        let old_hash = users::get_codex_credential(db, user_id, dek)
+            .await
+            .ok()
+            .flatten()
+            .map(|c| sha256_hex(&c.key));
+
+        let sub =
+            mint_and_store(&self.codex, db, dek, kek_version, user_id, authz, key_name).await?;
+
+        if let Some(hash) = old_hash {
+            self.validation.invalidate(&hash);
+        }
+        Ok(sub)
+    }
+
+    /// Ensure the user has a usable Codex key, minting one only when none is
+    /// stored or the stored one is revoked/expired — so a normal sign-in does
+    /// not orphan a fresh key in Codex on every visit, while a revoked key still
+    /// recovers. A transient Codex/DB error is propagated (the caller decides
+    /// whether to treat sign-in mint as best-effort).
+    pub async fn ensure_key(
+        &self,
+        db: &DatabaseConnection,
+        dek: &Dek,
+        kek_version: u32,
+        user_id: &str,
+        authz: &CodexCredential,
+        key_name: &str,
+    ) -> Result<KeyOutcome, IdentityError> {
+        match self.resolve(db, dek, user_id).await {
+            Ok(_) => Ok(KeyOutcome::Kept),
+            Err(IdentityError::NoCredential | IdentityError::CredentialsExpired) => {
+                let sub = self
+                    .regenerate(db, dek, kek_version, user_id, authz, key_name)
+                    .await?;
+                Ok(KeyOutcome::Minted(sub))
+            }
+            Err(other) => Err(other),
+        }
+    }
+}
+
+/// Outcome of [`CodexIdentity::ensure_key`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyOutcome {
+    /// A valid key was already stored; nothing was minted.
+    Kept,
+    /// A new key was minted and stored; carries the resolved `codex_user_sub`.
+    Minted(String),
 }
 
 /// Hex-encoded SHA-256 of a string, used as the validation-cache key so the
@@ -422,5 +489,102 @@ mod tests {
         let err = identity.resolve(&db, &dek, &user_id).await.unwrap_err();
         assert!(matches!(err, IdentityError::NoCredential));
         assert!(err.reauth_message().is_none());
+    }
+
+    fn mint_ok() -> wiremock::Mock {
+        Mock::given(method("POST"))
+            .and(path("/api/v1/api-keys"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(mint_body()))
+    }
+
+    #[tokio::test]
+    async fn regenerate_mints_and_swaps_the_stored_key() {
+        let server = MockServer::start().await;
+        mint_ok().mount(&server).await;
+        me_ok().mount(&server).await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([4u8; 32]);
+        let user_id = a_user(&db).await;
+        set_codex_credential(&db, &user_id, "codex-user-42", "old_key", &dek, 1)
+            .await
+            .unwrap();
+
+        let identity = CodexIdentity::new(codex(&server), Duration::from_secs(300));
+        let sub = identity
+            .regenerate(
+                &db,
+                &dek,
+                1,
+                &user_id,
+                &CodexCredential::Bearer("idp-token".into()),
+                "shisho",
+            )
+            .await
+            .unwrap();
+        assert_eq!(sub, "codex-user-42");
+
+        // The stored ciphertext is the newly minted key, not the old one.
+        let cred = get_codex_credential(&db, &user_id, &dek)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cred.key, "codex_dead_beef");
+    }
+
+    #[tokio::test]
+    async fn ensure_key_keeps_a_valid_stored_key() {
+        let server = MockServer::start().await;
+        // Only /me is stubbed: any mint attempt would 404 and fail, so a `Kept`
+        // outcome proves no re-mint happened.
+        me_ok().mount(&server).await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([4u8; 32]);
+        let user_id = a_user(&db).await;
+        set_codex_credential(&db, &user_id, "codex-user-42", "codex_dead_beef", &dek, 1)
+            .await
+            .unwrap();
+
+        let identity = CodexIdentity::new(codex(&server), Duration::from_secs(300));
+        let outcome = identity
+            .ensure_key(
+                &db,
+                &dek,
+                1,
+                &user_id,
+                &CodexCredential::Bearer("idp-token".into()),
+                "shisho",
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome, KeyOutcome::Kept);
+    }
+
+    #[tokio::test]
+    async fn ensure_key_mints_when_none_is_stored() {
+        let server = MockServer::start().await;
+        mint_ok().mount(&server).await;
+        me_ok().mount(&server).await;
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([4u8; 32]);
+        let user_id = a_user(&db).await;
+
+        let identity = CodexIdentity::new(codex(&server), Duration::from_secs(300));
+        let outcome = identity
+            .ensure_key(
+                &db,
+                &dek,
+                1,
+                &user_id,
+                &CodexCredential::Bearer("idp-token".into()),
+                "shisho",
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome, KeyOutcome::Minted("codex-user-42".to_owned()));
+        let cred = get_codex_credential(&db, &user_id, &dek)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cred.key, "codex_dead_beef");
     }
 }

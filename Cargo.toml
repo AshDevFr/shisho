@@ -129,6 +129,9 @@ tokio-cron-scheduler = "0.15"
 rust-embed = "8"
 mime_guess = "2"
 
+# Prompt/instruction templating (MCP prompts render from embedded .md.j2)
+minijinja = "2"
+
 # Concurrent caches
 dashmap = "6"
 

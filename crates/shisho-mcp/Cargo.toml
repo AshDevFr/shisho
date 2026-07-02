@@ -18,9 +18,12 @@ axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+minijinja.workspace = true
+rust-embed.workspace = true
 
 [dev-dependencies]
 shisho-api = { workspace = true, features = ["test-util"] }

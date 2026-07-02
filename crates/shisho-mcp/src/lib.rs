@@ -26,6 +26,7 @@
 //! [`service::required_scope`].
 
 pub mod auth;
+pub mod prompts;
 pub mod service;
 pub mod tools;
 pub mod transport;

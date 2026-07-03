@@ -27,6 +27,7 @@
 
 pub mod auth;
 pub mod prompts;
+pub mod resources;
 pub mod service;
 pub mod tools;
 pub mod transport;

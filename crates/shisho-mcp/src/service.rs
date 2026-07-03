@@ -9,14 +9,18 @@
 
 use std::sync::Arc;
 
+use rmcp::handler::server::router::prompt::PromptRouter;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Implementation, ListToolsResult, PaginatedRequestParams,
-    ServerCapabilities, ServerInfo,
+    CallToolRequestParams, CallToolResult, Implementation, ListResourcesResult, ListToolsResult,
+    PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult, ServerCapabilities,
+    ServerInfo,
 };
 use rmcp::service::RequestContext;
-use rmcp::{ErrorData, RoleServer, ServerHandler};
+use rmcp::{ErrorData, RoleServer, ServerHandler, prompt_handler};
+
+use super::resources;
 
 use super::auth::{McpIdentity, scopes_allow};
 use shisho_api::AppState;
@@ -40,6 +44,7 @@ pub struct McpService {
     pub(crate) state: Arc<AppState>,
     identity: McpIdentity,
     tool_router: ToolRouter<McpService>,
+    prompt_router: PromptRouter<McpService>,
 }
 
 impl McpService {
@@ -53,6 +58,7 @@ impl McpService {
                 + Self::verdicts_router()
                 + Self::profile_router()
                 + Self::status_router(),
+            prompt_router: Self::prompt_router(),
         }
     }
 
@@ -65,7 +71,10 @@ impl McpService {
     /// from the auth middleware's request extension for HTTP. A missing
     /// extension on the HTTP path means the route was mounted without the auth
     /// layer; deny rather than assume.
-    fn auth_context(&self, context: &RequestContext<RoleServer>) -> Result<AuthContext, ErrorData> {
+    pub(crate) fn auth_context(
+        &self,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<AuthContext, ErrorData> {
         match &self.identity {
             McpIdentity::Local(ctx) => Ok(ctx.clone()),
             McpIdentity::PerRequest => context
@@ -148,11 +157,34 @@ pub(crate) fn required_scope(tool: &str) -> Option<Scope> {
     }
 }
 
+#[prompt_handler(router = self.prompt_router)]
 impl ServerHandler for McpService {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("shisho", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(Implementation::new("shisho", env!("CARGO_PKG_VERSION")))
+        .with_instructions(INSTRUCTIONS)
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        Ok(resources::list())
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        resources::read(self, &request, &context).await
     }
 
     async fn list_tools(
@@ -370,6 +402,70 @@ mod tests {
             }
             other => panic!("expected an MCP error, got {other:?}"),
         }
+        client.cancel().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn prompts_and_resources_are_advertised_and_listed() {
+        let client = admin_client().await;
+        let info = client.peer_info().expect("server info");
+        assert!(info.capabilities.prompts.is_some(), "prompts capability");
+        assert!(
+            info.capabilities.resources.is_some(),
+            "resources capability"
+        );
+
+        let prompts = client.list_prompts(Default::default()).await.unwrap();
+        let mut names: Vec<&str> = prompts.prompts.iter().map(|p| p.name.as_ref()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["consolidate", "recommend"]);
+
+        let resources = client.list_resources(Default::default()).await.unwrap();
+        assert!(
+            resources
+                .resources
+                .iter()
+                .any(|r| r.uri == crate::resources::PROFILE_URI),
+            "the taste-profile resource is advertised"
+        );
+        client.cancel().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn recommend_prompt_renders_its_template() {
+        use rmcp::model::GetPromptRequestParams;
+
+        let client = admin_client().await;
+        let result = client
+            .get_prompt(GetPromptRequestParams::new("recommend"))
+            .await
+            .unwrap();
+        let rendered = serde_json::to_string(&result.messages).unwrap();
+        assert!(
+            rendered.contains("# Recommendation session"),
+            "the prompt renders its template: {rendered}"
+        );
+        client.cancel().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reading_the_profile_resource_resolves_the_caller() {
+        use rmcp::model::ReadResourceRequestParams;
+
+        // The admin config key carries no user, so the read reaches identity
+        // resolution and reports it (proof it dispatched with the caller's
+        // context, not a silent empty resource).
+        let client = admin_client().await;
+        let err = client
+            .read_resource(ReadResourceRequestParams::new(
+                crate::resources::PROFILE_URI,
+            ))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("Shisho user"),
+            "resource read resolved the caller's identity: {err}"
+        );
         client.cancel().await.unwrap();
     }
 }

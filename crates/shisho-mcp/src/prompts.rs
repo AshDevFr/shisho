@@ -8,14 +8,20 @@
 //! variable into an error instead of a silent blank, so template/context
 //! drift fails at test time rather than shipping a half-empty prompt.
 //!
-//! This module is only the rendering substrate; wiring the `recommend` and
-//! `consolidate` prompts onto the MCP server is the prompt-router's job.
+//! The rendering substrate (a strict `minijinja` env over the embedded tree)
+//! plus the prompt router that serves the `recommend` and `consolidate`
+//! prompts on the MCP server by rendering those templates per call.
 
 use std::sync::LazyLock;
 
 use minijinja::{Environment, UndefinedBehavior, Value};
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{PromptMessage, Role};
+use rmcp::{ErrorData, prompt, prompt_router};
 use rust_embed::RustEmbed;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+use crate::McpService;
 
 /// Template name for the recommendation-session prompt.
 pub const RECOMMEND: &str = "recommend.md.j2";
@@ -103,6 +109,57 @@ pub fn recommend(ctx: &RecommendContext) -> Result<String, PromptError> {
 /// Render the consolidation-session prompt.
 pub fn consolidate() -> Result<String, PromptError> {
     render(CONSOLIDATE, ConsolidateContext::default())
+}
+
+/// Optional session parameters accepted by the `recommend` prompt (mirrors
+/// [`RecommendContext`] on the wire).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendArgs {
+    /// Pool to start from: "library" (default) or "acquirable".
+    #[serde(default)]
+    pub pool: Option<String>,
+    /// How many final recommendations to aim for.
+    #[serde(default)]
+    pub count: Option<String>,
+}
+
+/// The prompt router: renders each server-provided prompt from its embedded
+/// template per call. No per-user data and no scope gating — prompts are static
+/// workflow copy (parameterized only by the session args above).
+#[prompt_router(vis = "pub(crate)")]
+impl McpService {
+    #[prompt(
+        name = "recommend",
+        description = "Run a full recommendation session: candidates, per-candidate verification against the taste profile, tiered output, and a verdict logged for everything surfaced."
+    )]
+    async fn recommend_prompt(
+        &self,
+        Parameters(args): Parameters<RecommendArgs>,
+    ) -> Result<Vec<PromptMessage>, ErrorData> {
+        let text = recommend(&RecommendContext {
+            pool: args.pool,
+            count: args.count,
+        })
+        .map_err(render_error)?;
+        Ok(vec![PromptMessage::new_text(Role::User, text)])
+    }
+
+    #[prompt(
+        name = "consolidate",
+        description = "Consolidate recent reading feedback into a proposed taste-profile update via propose_profile_update."
+    )]
+    async fn consolidate_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        let text = consolidate().map_err(render_error)?;
+        Ok(vec![PromptMessage::new_text(Role::User, text)])
+    }
+}
+
+/// A prompt-render failure is a server bug (a template/context contract broke),
+/// not the caller's to fix: surface it as an internal error.
+fn render_error(err: PromptError) -> ErrorData {
+    tracing::error!(error = %err, "rendering an MCP prompt failed");
+    ErrorData::internal_error(format!("rendering the prompt failed: {err}"), None)
 }
 
 #[cfg(test)]

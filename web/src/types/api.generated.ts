@@ -184,6 +184,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's current taste profile plus any pending proposal. */
+        get: operations["get_profile"];
+        /** Directly edit the profile, applying a new version immediately. */
+        put: operations["edit_profile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/proposals/{version}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a pending proposal, applying it as the current profile. */
+        post: operations["approve_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/proposals/{version}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a pending proposal; the current profile is unchanged. */
+        post: operations["reject_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's current profile as raw Markdown (for copy/download). */
+        get: operations["get_profile_raw"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's version history, newest first, each with its rendered diff. */
+        get: operations["list_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/setup": {
         parameters: {
             query?: never;
@@ -298,6 +384,21 @@ export interface components {
             scopes: components["schemas"]["Scope"][];
         };
         /**
+         * @description A direct edit: the full replacement content, optionally pinned to the version
+         *     it was drafted against (a stale base is rejected).
+         */
+        EditProfileRequest: {
+            /**
+             * Format: int64
+             * @description The version this edit was drafted against; a mismatch is a 409.
+             */
+            baseVersion?: number | null;
+            /** @description One-line summary of what changed; defaults to a generic web-edit note. */
+            changeSummary?: string | null;
+            /** @description The full new profile content (Markdown). */
+            content: string;
+        };
+        /**
          * @description Read-only encryption status. Never includes key material: key management is
          *     a deployment-layer concern (config + the `shisho encryption` CLI).
          */
@@ -342,11 +443,40 @@ export interface components {
             /** @example 0.1.0 */
             version: string;
         };
+        /** @description A stored pending proposal (a `consolidate` output awaiting review). */
+        PendingProposalDto: {
+            /**
+             * Format: int64
+             * @description The version it was drafted against.
+             */
+            baseVersion: number;
+            /** @description One-line summary of what changed and why. */
+            changeSummary: string;
+            /** @description Proposed Markdown content. */
+            content: string;
+            /** @description Unified diff from the current profile to the proposal. */
+            diff: string;
+            /**
+             * Format: int64
+             * @description The version this proposal will become if approved.
+             */
+            version: number;
+        };
+        /** @description The current taste profile plus any pending proposal awaiting review. */
+        ProfileResponse: {
+            /** @description The current profile content (Markdown). Empty for a version-0 profile. */
+            content: string;
+            pendingProposal?: null | components["schemas"]["PendingProposalDto"];
+            /** @description When the current version was applied (ISO 8601), absent at version 0. */
+            updatedAt?: string | null;
+            /** Format: int64 */
+            version: number;
+        };
         /**
          * @description API key permission as `resource:action`.
          * @enum {string}
          */
-        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage";
+        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read";
         /** @description The revealed admin key. Returned exactly once. */
         SetupKeyResponse: {
             /** @description Plaintext admin API key. Store it now; it is never shown again. */
@@ -358,6 +488,19 @@ export interface components {
             authMode: string;
             /** @description Number of `[[auth.providers]]` already present in config. */
             providersConfigured: number;
+        };
+        /** @description One entry in the version history, with its rendered diff. */
+        VersionDto: {
+            /** Format: int64 */
+            baseVersion: number;
+            changeSummary: string;
+            createdAt: string;
+            /** @description Unified diff from the base version's content to this version's. */
+            diff: string;
+            /** @description `pending` | `applied` | `rejected` | `superseded`. */
+            status: string;
+            /** Format: int64 */
+            version: number;
         };
         /**
          * @description The caller's verified identity. `keyId`/`userId` are null when the static
@@ -790,6 +933,288 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    edit_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditProfileRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    approve_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description the pending proposal's version */
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    reject_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description the pending proposal's version */
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_profile_raw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": unknown;
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDto"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

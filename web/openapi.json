@@ -573,6 +573,386 @@
         ]
       }
     },
+    "/api/v1/profile": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "The caller's current taste profile plus any pending proposal.",
+        "operationId": "get_profile",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Directly edit the profile, applying a new version immediately.",
+        "operationId": "edit_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile/proposals/{version}/approve": {
+      "post": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Approve a pending proposal, applying it as the current profile.",
+        "operationId": "approve_proposal",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "description": "the pending proposal's version",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile/proposals/{version}/reject": {
+      "post": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Reject a pending proposal; the current profile is unchanged.",
+        "operationId": "reject_proposal",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "description": "the pending proposal's version",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile/raw": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "The caller's current profile as raw Markdown (for copy/download).",
+        "operationId": "get_profile_raw",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/markdown": {}
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile/versions": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "The caller's version history, newest first, each with its rendered diff.",
+        "operationId": "list_versions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/setup": {
       "get": {
         "tags": [
@@ -892,6 +1272,34 @@
           }
         }
       },
+      "EditProfileRequest": {
+        "type": "object",
+        "description": "A direct edit: the full replacement content, optionally pinned to the version\nit was drafted against (a stale base is rejected).",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "baseVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The version this edit was drafted against; a mismatch is a 409."
+          },
+          "changeSummary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One-line summary of what changed; defaults to a generic web-edit note."
+          },
+          "content": {
+            "type": "string",
+            "description": "The full new profile content (Markdown)."
+          }
+        }
+      },
       "EncryptionStatus": {
         "type": "object",
         "description": "Read-only encryption status. Never includes key material: key management is\na deployment-layer concern (config + the `shisho encryption` CLI).",
@@ -985,6 +1393,77 @@
           }
         }
       },
+      "PendingProposalDto": {
+        "type": "object",
+        "description": "A stored pending proposal (a `consolidate` output awaiting review).",
+        "required": [
+          "version",
+          "baseVersion",
+          "content",
+          "changeSummary",
+          "diff"
+        ],
+        "properties": {
+          "baseVersion": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The version it was drafted against."
+          },
+          "changeSummary": {
+            "type": "string",
+            "description": "One-line summary of what changed and why."
+          },
+          "content": {
+            "type": "string",
+            "description": "Proposed Markdown content."
+          },
+          "diff": {
+            "type": "string",
+            "description": "Unified diff from the current profile to the proposal."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The version this proposal will become if approved."
+          }
+        }
+      },
+      "ProfileResponse": {
+        "type": "object",
+        "description": "The current taste profile plus any pending proposal awaiting review.",
+        "required": [
+          "content",
+          "version"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The current profile content (Markdown). Empty for a version-0 profile."
+          },
+          "pendingProposal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PendingProposalDto",
+                "description": "A consolidation proposal awaiting the user's approval, if one is pending."
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the current version was applied (ISO 8601), absent at version 0."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "Scope": {
         "type": "string",
         "description": "API key permission as `resource:action`.",
@@ -992,7 +1471,14 @@
           "example:read",
           "example:write",
           "example:delete",
-          "keys:manage"
+          "keys:manage",
+          "candidates:read",
+          "lookup:read",
+          "library:read",
+          "verdicts:write",
+          "profile:read",
+          "profile:write",
+          "status:read"
         ]
       },
       "SetupKeyResponse": {
@@ -1024,6 +1510,42 @@
             "type": "integer",
             "description": "Number of `[[auth.providers]]` already present in config.",
             "minimum": 0
+          }
+        }
+      },
+      "VersionDto": {
+        "type": "object",
+        "description": "One entry in the version history, with its rendered diff.",
+        "required": [
+          "version",
+          "baseVersion",
+          "status",
+          "changeSummary",
+          "createdAt",
+          "diff"
+        ],
+        "properties": {
+          "baseVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "changeSummary": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "string",
+            "description": "Unified diff from the base version's content to this version's."
+          },
+          "status": {
+            "type": "string",
+            "description": "`pending` | `applied` | `rejected` | `superseded`."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1068,6 +1590,10 @@
     {
       "name": "connections",
       "description": "Connected-application (OAuth grant) management. Lists the OAuth clients holding a live grant on the caller's account and revokes one. Requires the keys:manage scope, so a browser session qualifies but a connector's own token does not."
+    },
+    {
+      "name": "profile",
+      "description": "Taste-profile management: read the current profile and version history, edit it directly, and approve or reject pending consolidation proposals. Reads require profile:read, writes profile:write."
     },
     {
       "name": "admin",

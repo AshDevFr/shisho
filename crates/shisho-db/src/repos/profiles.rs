@@ -304,6 +304,17 @@ pub async fn rendered_history(
         .collect())
 }
 
+/// A rendered unified diff from `base` to `new` content, matching the format
+/// [`rendered_history`] uses. Exposed so a caller (e.g. the profile UI's
+/// pending-proposal view) can render "current → proposal" without a version
+/// row of its own.
+pub fn diff(base: &str, new: &str) -> String {
+    similar::TextDiff::from_lines(base, new)
+        .unified_diff()
+        .header("current", "proposed")
+        .to_string()
+}
+
 /// The current profile version (0 when no row exists).
 async fn current_version<C: ConnectionTrait>(
     conn: &C,

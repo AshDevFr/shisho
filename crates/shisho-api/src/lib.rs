@@ -12,6 +12,7 @@ pub mod info;
 pub mod keys;
 pub mod middleware;
 pub mod oauth_routes;
+pub mod profile;
 pub mod setup;
 pub mod static_files;
 pub mod whoami;
@@ -182,6 +183,8 @@ fn build_router(state: Arc<AppState>, extra_example_scoped: Router<Arc<AppState>
         .nest("/keys", keys::router())
         // Connected-app (OAuth grant) management; same keys:manage guard.
         .nest("/connections", connections::router())
+        // Taste-profile management; carries its own profile:read/write guard.
+        .nest("/profile", profile::router())
         // Admin routes self-gate on require_admin inside each handler.
         .merge(admin_routes::router())
         .layer(axum::middleware::from_fn_with_state(

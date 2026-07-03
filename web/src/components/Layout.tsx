@@ -23,16 +23,27 @@ import { ColorSchemeToggle } from "./ColorSchemeToggle";
 // Route paths the navbar can link to. Keeping `to` a literal union (not
 // `string`) preserves TanStack Router's typed-link checking. Add your own
 // pages here as the app grows.
-type NavPath = "/" | "/profile" | "/settings";
+type NavPath =
+  | "/"
+  | "/taste-profile"
+  | "/verdicts"
+  | "/status"
+  | "/profile"
+  | "/settings";
 type NavItem = { to: NavPath; label: string };
 
-const BASE_NAV: NavItem[] = [{ to: "/", label: "Home" }];
+// The domain pages (the primary user's own recommendation data) show in both
+// auth modes, ahead of the account/instance settings entries.
+const BASE_NAV: NavItem[] = [
+  { to: "/", label: "Home" },
+  { to: "/taste-profile", label: "Taste profile" },
+];
 
 /// The navbar entries for the current mode/role.
 ///
-/// - Single-user: one flat "Settings" entry.
-/// - Multi-user: a per-user "Profile" entry, plus an "Admin" entry (→ /settings)
-///   only for admins. Non-admins never see the admin area.
+/// - Single-user: the domain pages plus one flat "Settings" entry.
+/// - Multi-user: the domain pages, a per-user "Profile" (account) entry, plus an
+///   "Admin" entry (→ /settings) only for admins.
 function navItems(multiUser: boolean, isAdmin: boolean): NavItem[] {
   if (!multiUser) {
     return [...BASE_NAV, { to: "/settings", label: "Settings" }];

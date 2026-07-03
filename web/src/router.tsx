@@ -10,6 +10,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SetupPage } from "@/pages/SetupPage";
+import { TasteProfilePage } from "@/pages/TasteProfilePage";
 
 // Code-based routing keeps the scaffold self-contained (no router codegen
 // plugin). Switch to file-based routing later if the route tree grows.
@@ -53,6 +54,14 @@ const profileRoute = createRoute({
   component: ProfilePage,
 });
 
+// The taste profile: the primary user's own recommendation data. Available in
+// both auth modes (unlike the account /profile page).
+const tasteProfileRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/taste-profile",
+  component: TasteProfilePage,
+});
+
 // Instance settings: the Admin page in multi-user mode, the flat Settings page
 // in single-user mode.
 const settingsRoute = createRoute({
@@ -64,7 +73,12 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
-  layoutRoute.addChildren([homeRoute, profileRoute, settingsRoute]),
+  layoutRoute.addChildren([
+    homeRoute,
+    tasteProfileRoute,
+    profileRoute,
+    settingsRoute,
+  ]),
 ]);
 
 /// Tests build their own router over a memory history; the app uses the

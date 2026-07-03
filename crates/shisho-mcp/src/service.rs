@@ -1,9 +1,11 @@
 //! The rmcp server handler: one tool registry behind every transport.
 //!
 //! `McpService` holds the same [`AppState`] as the REST layer and registers the
-//! example tools (defined in [`super::tools`]). The handler is written out by
+//! domain tools (defined in [`super::tools`]). The handler is written out by
 //! hand instead of `#[tool_handler]` because `call_tool` enforces the per-tool
-//! scope before dispatching.
+//! scope before dispatching and injects the caller's [`AuthContext`] into the
+//! call so per-user tools can resolve a Codex [`UserCtx`] uniformly across the
+//! HTTP and stdio transports.
 
 use std::sync::Arc;
 
@@ -20,16 +22,21 @@ use super::auth::{McpIdentity, scopes_allow};
 use shisho_api::AppState;
 use shisho_api::middleware::AuthContext;
 use shisho_auth::keys::Scope;
+use shisho_services::Services;
+use shisho_services::UserCtx;
+use shisho_services::codex_identity::IdentityError;
 
 /// Instructions shown to the client model on initialize: this is prompt
-/// surface, so keep it short and operational. Rewrite it for your server.
-const INSTRUCTIONS: &str = "This is an example MCP server scaffold. The `ping` tool checks \
-that the server is reachable; the `echo` tool returns the message you send it. Replace these \
-with tools for your own domain.";
+/// surface, kept short and operational.
+const INSTRUCTIONS: &str = "Shisho is a library-aware manga recommendation service over the \
+caller's own Codex library. Use get_candidates for recommendation pools, lookup/search_library \
+for series details, list_libraries to scope a session, record_verdict to log every \
+recommendation decision, record_feedback for reading outcomes, get_profile/propose_profile_update \
+for the taste profile, and status to qualify data freshness. The recommend and consolidate \
+prompts encode the full workflows.";
 
 #[derive(Clone)]
 pub struct McpService {
-    #[allow(dead_code)]
     pub(crate) state: Arc<AppState>,
     identity: McpIdentity,
     tool_router: ToolRouter<McpService>,
@@ -40,7 +47,12 @@ impl McpService {
         Self {
             state,
             identity,
-            tool_router: Self::example_tool_router(),
+            tool_router: Self::candidates_router()
+                + Self::lookup_router()
+                + Self::library_router()
+                + Self::verdicts_router()
+                + Self::profile_router()
+                + Self::status_router(),
         }
     }
 
@@ -49,19 +61,73 @@ impl McpService {
         self.tool_router.list_all()
     }
 
-    /// The caller's scopes: fixed at startup for stdio, read back from the auth
-    /// middleware's request extension for HTTP. A missing extension on the HTTP
-    /// path means the route was mounted without the auth layer; deny rather than
-    /// assume.
-    fn scopes_for(&self, context: &RequestContext<RoleServer>) -> Result<Vec<Scope>, ErrorData> {
+    /// The caller's verified identity: fixed at startup for stdio, read back
+    /// from the auth middleware's request extension for HTTP. A missing
+    /// extension on the HTTP path means the route was mounted without the auth
+    /// layer; deny rather than assume.
+    fn auth_context(&self, context: &RequestContext<RoleServer>) -> Result<AuthContext, ErrorData> {
         match &self.identity {
-            McpIdentity::Local(ctx) => Ok(ctx.scopes.clone()),
+            McpIdentity::Local(ctx) => Ok(ctx.clone()),
             McpIdentity::PerRequest => context
                 .extensions
                 .get::<axum::http::request::Parts>()
                 .and_then(|parts| parts.extensions.get::<AuthContext>())
-                .map(|ctx| ctx.scopes.clone())
+                .cloned()
                 .ok_or_else(|| ErrorData::invalid_request("request is not authenticated", None)),
+        }
+    }
+
+    /// The domain service registry, or a typed error when the domain surface is
+    /// not configured (no `codex.base_url`).
+    pub(crate) fn services(&self) -> Result<&Services, ErrorData> {
+        self.state.services.as_ref().ok_or_else(|| {
+            ErrorData::invalid_request(
+                "the recommendation service is not configured on this instance (set codex.base_url)",
+                None,
+            )
+        })
+    }
+
+    /// Resolve the caller's per-user Codex [`UserCtx`] from their verified
+    /// identity: needs a user-owned key (`user_id`), at-rest encryption (the
+    /// `dek`), and a configured Codex identity resolver. Each absence is a
+    /// distinct, actionable error; a revoked stored key surfaces the re-auth
+    /// message (PRD 3.4) — mirrors the REST `CodexUserCtx` extractor.
+    pub(crate) async fn user_ctx(&self, auth: &AuthContext) -> Result<UserCtx, ErrorData> {
+        let Some(user_id) = auth.user_id.as_deref() else {
+            return Err(ErrorData::invalid_request(
+                "this credential is not tied to a Shisho user, so it has no Codex identity; use a \
+                 user-owned API key (or sign in) to run per-user tools",
+                None,
+            ));
+        };
+        let dek = self.state.dek.as_ref().ok_or_else(|| {
+            ErrorData::invalid_request(
+                "per-user Codex access requires at-rest encryption to be configured",
+                None,
+            )
+        })?;
+        let identity = self.state.codex_identity.as_ref().ok_or_else(|| {
+            ErrorData::invalid_request("Codex is not configured on this instance", None)
+        })?;
+        identity
+            .resolve(&self.state.db, dek, user_id)
+            .await
+            .map_err(map_identity_error)
+    }
+}
+
+/// Map a Codex identity-resolution failure to a tool-facing protocol error.
+/// A revoked/expired stored key and a missing credential are the caller's to
+/// fix (actionable messages); everything else is an internal failure.
+fn map_identity_error(err: IdentityError) -> ErrorData {
+    match &err {
+        IdentityError::CredentialsExpired => {
+            ErrorData::invalid_request(err.reauth_message().unwrap_or_default().to_string(), None)
+        }
+        IdentityError::NoCredential => ErrorData::invalid_request(err.to_string(), None),
+        _ => {
+            ErrorData::internal_error(format!("resolving your Codex identity failed: {err}"), None)
         }
     }
 }
@@ -71,8 +137,13 @@ impl McpService {
 /// `(resource, action)` decision (the scope-matrix test enforces it).
 pub(crate) fn required_scope(tool: &str) -> Option<Scope> {
     match tool {
-        "ping" => Some(Scope::EXAMPLE_READ),
-        "echo" => Some(Scope::EXAMPLE_WRITE),
+        "get_candidates" => Some(Scope::CANDIDATES_READ),
+        "lookup" => Some(Scope::LOOKUP_READ),
+        "list_libraries" | "search_library" => Some(Scope::LIBRARY_READ),
+        "record_verdict" | "record_feedback" => Some(Scope::VERDICTS_WRITE),
+        "get_profile" => Some(Scope::PROFILE_READ),
+        "propose_profile_update" => Some(Scope::PROFILE_WRITE),
+        "status" => Some(Scope::STATUS_READ),
         _ => None,
     }
 }
@@ -99,13 +170,13 @@ impl ServerHandler for McpService {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        context: RequestContext<RoleServer>,
+        mut context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        let scopes = self.scopes_for(&context)?;
+        let auth = self.auth_context(&context)?;
         let required = required_scope(&request.name).ok_or_else(|| {
             ErrorData::invalid_params(format!("unknown tool {:?}", request.name), None)
         })?;
-        if !scopes_allow(&scopes, required) {
+        if !scopes_allow(&auth.scopes, required) {
             return Err(ErrorData::invalid_request(
                 format!(
                     "this API key lacks the {required} scope required by the {} tool",
@@ -114,6 +185,9 @@ impl ServerHandler for McpService {
                 None,
             ));
         }
+        // Hand the verified identity to the tool so per-user tools resolve their
+        // UserCtx the same way on stdio and HTTP.
+        context.extensions.insert(auth);
         let tcc = ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await
     }
@@ -160,7 +234,17 @@ mod tests {
         client_with_state(state, local(Scope::all())).await
     }
 
-    const ALL_TOOLS: [&str; 2] = ["echo", "ping"];
+    const ALL_TOOLS: [&str; 9] = [
+        "get_candidates",
+        "get_profile",
+        "list_libraries",
+        "lookup",
+        "propose_profile_update",
+        "record_feedback",
+        "record_verdict",
+        "search_library",
+        "status",
+    ];
 
     #[tokio::test]
     async fn initialize_reports_binary_metadata() {
@@ -194,11 +278,15 @@ mod tests {
             let schema = serde_json::to_value(tool.input_schema.as_ref()).unwrap();
             assert_eq!(schema["type"], "object", "{} schema", tool.name);
         }
-        let echo = listed.tools.iter().find(|t| t.name == "echo").unwrap();
-        let schema = serde_json::to_value(echo.input_schema.as_ref()).unwrap();
+        let candidates = listed
+            .tools
+            .iter()
+            .find(|t| t.name == "get_candidates")
+            .unwrap();
+        let schema = serde_json::to_value(candidates.input_schema.as_ref()).unwrap();
         assert!(
-            schema["properties"]["message"].is_object(),
-            "echo must declare its message parameter: {schema}"
+            schema["properties"]["pool"].is_object(),
+            "get_candidates must declare its pool parameter: {schema}"
         );
         client.cancel().await.unwrap();
     }
@@ -218,22 +306,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_scope_cannot_call_write_tools() {
+    async fn a_wrong_scope_is_denied_before_dispatch() {
+        // A key scoped only to candidates:read.
         let state = test_state(Default::default()).await;
-        let client = client_with_state(state, local(vec![Scope::EXAMPLE_READ])).await;
+        let client = client_with_state(state, local(vec![Scope::CANDIDATES_READ])).await;
 
-        // The read tool works.
-        let result = client
-            .call_tool(CallToolRequestParams::new("ping"))
+        // A write tool it lacks the scope for is rejected with an actionable
+        // message, before any dispatch.
+        let err = client
+            .call_tool(CallToolRequestParams::new("record_verdict"))
             .await
-            .unwrap();
-        assert_ne!(result.is_error, Some(true));
+            .unwrap_err();
+        match err {
+            ServiceError::McpError(data) => {
+                assert!(data.message.contains("write"), "{}", data.message);
+                assert!(data.message.contains("record_verdict"), "{}", data.message);
+            }
+            other => panic!("expected an MCP error, got {other:?}"),
+        }
 
-        // The write tool is rejected with an actionable message.
+        // A tool it IS scoped for passes the gate and reaches identity
+        // resolution (which then fails here: the test key is tied to no user).
+        // The point is that the failure is not a scope denial.
         let err = client
             .call_tool(
-                CallToolRequestParams::new("echo").with_arguments(
-                    serde_json::json!({"message": "hi"})
+                CallToolRequestParams::new("get_candidates").with_arguments(
+                    serde_json::json!({"pool": "library"})
                         .as_object()
                         .cloned()
                         .unwrap(),
@@ -243,8 +341,16 @@ mod tests {
             .unwrap_err();
         match err {
             ServiceError::McpError(data) => {
-                assert!(data.message.contains("write"), "{}", data.message);
-                assert!(data.message.contains("echo"), "{}", data.message);
+                assert!(
+                    !data.message.contains("lacks the"),
+                    "the scope gate should have passed: {}",
+                    data.message
+                );
+                assert!(
+                    data.message.contains("Shisho user"),
+                    "reached identity resolution: {}",
+                    data.message
+                );
             }
             other => panic!("expected an MCP error, got {other:?}"),
         }
@@ -264,27 +370,6 @@ mod tests {
             }
             other => panic!("expected an MCP error, got {other:?}"),
         }
-        client.cancel().await.unwrap();
-    }
-
-    /// End-to-end through the protocol: echo round-trips the message.
-    #[tokio::test]
-    async fn echo_roundtrip_over_transport() {
-        let client = admin_client().await;
-        let result = client
-            .call_tool(
-                CallToolRequestParams::new("echo").with_arguments(
-                    serde_json::json!({"message": "hello mcp"})
-                        .as_object()
-                        .cloned()
-                        .unwrap(),
-                ),
-            )
-            .await
-            .unwrap();
-        assert_ne!(result.is_error, Some(true));
-        let structured = result.structured_content.expect("structured content");
-        assert_eq!(structured["message"], "hello mcp");
         client.cancel().await.unwrap();
     }
 }

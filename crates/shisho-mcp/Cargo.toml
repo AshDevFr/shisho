@@ -11,6 +11,10 @@ shisho-api = { workspace = true }
 shisho-auth = { workspace = true }
 shisho-config = { workspace = true }
 shisho-db = { workspace = true }
+shisho-services = { workspace = true }
+shisho-codex = { workspace = true }
+shisho-cache = { workspace = true }
+shisho-ids = { workspace = true }
 
 rmcp.workspace = true
 schemars.workspace = true
@@ -24,6 +28,9 @@ tokio.workspace = true
 tokio-util.workspace = true
 minijinja.workspace = true
 rust-embed.workspace = true
+sea-orm.workspace = true
+chrono.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 shisho-api = { workspace = true, features = ["test-util"] }

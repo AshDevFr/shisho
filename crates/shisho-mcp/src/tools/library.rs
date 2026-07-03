@@ -1,0 +1,154 @@
+//! `search_library` + `list_libraries`: the caller's own Codex library.
+
+use chrono::{DateTime, Utc};
+use rmcp::handler::server::tool::Extension;
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::CallToolResult;
+use rmcp::{ErrorData, tool, tool_router};
+use serde::{Deserialize, Serialize};
+
+use super::{CODEX_KEY_REVOKED, swr_codex_unauthorized, tool_error, tool_json};
+use crate::McpService;
+use shisho_api::middleware::AuthContext;
+use shisho_codex::CodexError;
+use shisho_services::library::{self, LibraryError, LibraryQuery, LibrarySeries};
+use shisho_services::read_state::ReadState;
+
+/// Matches the service's own clamp; at the cap, truncation cannot be detected
+/// (the +1 probe row would exceed it).
+const DEFAULT_LIMIT: usize = 50;
+const MAX_LIMIT: usize = 200;
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchLibraryParams {
+    /// Title/author text, matched server-side by Codex.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Case-insensitive genre membership.
+    #[serde(default)]
+    pub genre: Option<String>,
+    /// Read-state filter: "untouched", "inProgress", or "completed".
+    #[serde(default)]
+    pub state: Option<ReadState>,
+    /// Codex libraries to search, by name or ID (see list_libraries); empty = all.
+    #[serde(default)]
+    pub libraries: Vec<String>,
+    /// Default 50, capped at 200.
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrariesResult {
+    libraries: Vec<LibraryInfo>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryInfo {
+    id: String,
+    name: String,
+    series_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySearchResult {
+    series: Vec<LibrarySeries>,
+    /// More series matched than were returned.
+    truncated: bool,
+    /// Age of the library snapshot the results came from.
+    as_of: DateTime<Utc>,
+}
+
+#[tool_router(router = library_router, vis = "pub(crate)")]
+impl McpService {
+    #[tool(
+        name = "list_libraries",
+        description = "The caller's Codex libraries (name, ID, series count). A Codex instance often shelves more than manga (comics, cookbooks, artbooks); call this first and, when several libraries exist, ask the user which to draw from (one, several, or all), then pass the chosen names via the 'libraries' parameter of get_candidates and search_library."
+    )]
+    async fn list_libraries(
+        &self,
+        Extension(auth): Extension<AuthContext>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let user = self.user_ctx(&auth).await?;
+        let services = self.services()?;
+        match services
+            .snapshots
+            .codex()
+            .list_libraries(&user.credential)
+            .await
+        {
+            Ok(libraries) => tool_json(&LibrariesResult {
+                libraries: libraries
+                    .into_iter()
+                    .map(|l| LibraryInfo {
+                        id: l.id,
+                        name: l.name,
+                        series_count: l.series_count,
+                    })
+                    .collect(),
+            }),
+            Err(CodexError::Unauthorized { .. }) => Ok(tool_error(CODEX_KEY_REVOKED)),
+            Err(err) => Ok(tool_error(format!("could not list Codex libraries: {err}"))),
+        }
+    }
+
+    #[tool(
+        name = "search_library",
+        description = "Search the caller's own Codex library by title/author text, genre, and read state. Answers questions like 'did I read anything by this author?' or 'what fantasy series am I mid-way through?'. Pure library view: results are the caller's own series only."
+    )]
+    async fn search_library(
+        &self,
+        Parameters(params): Parameters<SearchLibraryParams>,
+        Extension(auth): Extension<AuthContext>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let user = self.user_ctx(&auth).await?;
+        let services = self.services()?;
+        let limit = params.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+
+        // Ask for one extra row purely to detect server-side truncation.
+        let query = LibraryQuery {
+            text: params.text,
+            genre: params.genre,
+            state: params.state,
+            libraries: params.libraries,
+            limit: Some((limit + 1).min(MAX_LIMIT)),
+        };
+        let mut series = match library::search_library(services, &user, &query).await {
+            Ok(series) => series,
+            Err(err) => return Ok(map_error(&err)),
+        };
+        let truncated = series.len() > limit;
+        series.truncate(limit);
+
+        // Cache hit: the search above just built/refreshed this snapshot.
+        let as_of = match services
+            .snapshots
+            .get(&user.user_sub, &user.credential)
+            .await
+        {
+            Ok(hit) => hit.as_of,
+            Err(err) if swr_codex_unauthorized(&err) => {
+                return Ok(tool_error(CODEX_KEY_REVOKED));
+            }
+            Err(err) => return Ok(tool_error(format!("library snapshot unavailable: {err}"))),
+        };
+
+        tool_json(&LibrarySearchResult {
+            series,
+            truncated,
+            as_of,
+        })
+    }
+}
+
+fn map_error(err: &LibraryError) -> CallToolResult {
+    match err {
+        LibraryError::Snapshot(swr) if swr_codex_unauthorized(swr) => tool_error(CODEX_KEY_REVOKED),
+        LibraryError::Search(CodexError::Unauthorized { .. }) => tool_error(CODEX_KEY_REVOKED),
+        other => tool_error(other.to_string()),
+    }
+}

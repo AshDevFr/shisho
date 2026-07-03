@@ -4113,14 +4113,19 @@ dependencies = [
  "serde_json",
  "shisho-api",
  "shisho-auth",
+ "shisho-cache",
+ "shisho-codex",
  "shisho-config",
  "shisho-db",
+ "shisho-ids",
  "shisho-oauth",
+ "shisho-services",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tower",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

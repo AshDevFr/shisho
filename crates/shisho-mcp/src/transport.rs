@@ -116,32 +116,29 @@ mod tests {
         assert_eq!(info.server_info.name, "shisho");
 
         let tools = client.list_tools(Default::default()).await.unwrap();
-        assert_eq!(tools.tools.len(), 2);
+        assert_eq!(tools.tools.len(), 9);
         client.cancel().await.unwrap();
     }
 
     /// One registry, every door: a tool call over HTTP hits the same state as
-    /// the rest of the app.
+    /// the rest of the app. The admin config key carries every scope but no
+    /// user, so `status` passes the scope gate and dispatches into the handler,
+    /// which then resolves identity against the shared state (and reports it has
+    /// no Codex user) — proof the call reached the real handler over HTTP.
     #[tokio::test]
     async fn http_tool_call_dispatches_into_shared_state() {
         let state = state_with(|_| {}).await;
         let base = spawn_app(state.clone()).await;
         let client = http_client(&base, ADMIN_KEY).await;
 
-        let result = client
-            .call_tool(
-                CallToolRequestParams::new("echo").with_arguments(
-                    serde_json::json!({"message": "over http"})
-                        .as_object()
-                        .cloned()
-                        .unwrap(),
-                ),
-            )
+        let err = client
+            .call_tool(CallToolRequestParams::new("status"))
             .await
-            .unwrap();
-        assert_ne!(result.is_error, Some(true));
-        let structured = result.structured_content.unwrap();
-        assert_eq!(structured["message"], "over http");
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("Shisho user"),
+            "dispatched into the handler's identity resolution: {err}"
+        );
         client.cancel().await.unwrap();
     }
 
@@ -248,36 +245,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_scope_key_lists_tools_but_cannot_echo() {
+    async fn read_scope_key_lists_tools_but_cannot_write() {
         let state = state_with(|_| {}).await;
-        let (key, _) = seed_key(&state.db, "ro", &[Scope::EXAMPLE_READ], None).await;
+        let (key, _) = seed_key(&state.db, "ro", &[Scope::CANDIDATES_READ], None).await;
         let base = spawn_app(state).await;
         let client = http_client(&base, &key).await;
 
-        // Read works: listing tools and calling the read tool.
+        // Listing tools is not scope-gated: a read key sees the whole registry.
         let tools = client.list_tools(Default::default()).await.unwrap();
-        assert_eq!(tools.tools.len(), 2);
-        let result = client
-            .call_tool(CallToolRequestParams::new("ping"))
-            .await
-            .unwrap();
-        assert_ne!(result.is_error, Some(true));
+        assert_eq!(tools.tools.len(), 9);
 
-        // Write is refused per tool.
+        // A write tool it lacks the scope for is refused per tool, before dispatch.
         let err = client
-            .call_tool(
-                CallToolRequestParams::new("echo").with_arguments(
-                    serde_json::json!({"message": "x"})
-                        .as_object()
-                        .cloned()
-                        .unwrap(),
-                ),
-            )
+            .call_tool(CallToolRequestParams::new("record_verdict"))
             .await
             .unwrap_err();
         match err {
             ServiceError::McpError(data) => {
-                assert!(data.message.contains("write"), "{}", data.message)
+                assert!(data.message.contains("write"), "{}", data.message);
+                assert!(data.message.contains("record_verdict"), "{}", data.message);
             }
             other => panic!("expected an MCP error, got {other:?}"),
         }
@@ -325,7 +311,7 @@ mod tests {
         let client = http_client(&base, &token).await;
 
         let tools = client.list_tools(Default::default()).await.unwrap();
-        assert_eq!(tools.tools.len(), 2);
+        assert_eq!(tools.tools.len(), 9);
         client.cancel().await.unwrap();
     }
 

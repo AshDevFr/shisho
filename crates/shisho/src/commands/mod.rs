@@ -4,6 +4,7 @@ pub mod mcp;
 pub mod migrate;
 pub mod openapi;
 pub mod serve;
+pub mod sweep;
 
 use std::sync::Arc;
 
@@ -39,6 +40,23 @@ fn init_tracing_inner(cfg: &AppConfig, stderr: bool) {
         (false, true) => builder.with_writer(std::io::stderr).init(),
         (false, false) => builder.init(),
     }
+}
+
+/// Open the database (running migrations) and build just the domain
+/// [`shisho_services::Services`] — the DB + backend clients + caches — without
+/// the full [`AppState`]. Used by the one-shot domain subcommands (`sweep …`),
+/// which need the services but not the HTTP surface (providers, sessions, setup
+/// state). Errors when the recommendation service is not configured
+/// (`codex.base_url` unset), since there is nothing to run without it.
+pub async fn build_services_from_config(
+    cfg: &AppConfig,
+) -> anyhow::Result<shisho_services::Services> {
+    let dek = shisho_db::keys::bootstrap_dek(cfg)?;
+    let db = shisho_db::connect(cfg, dek.as_ref()).await?;
+    shisho_db::run_migrations(&db).await?;
+    shisho_api::build_services(cfg, db)
+        .await?
+        .context("the recommendation service is not configured (set codex.base_url)")
 }
 
 /// Open the (optionally encrypted) database, run migrations, and assemble the

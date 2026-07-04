@@ -50,6 +50,25 @@ enum Commands {
         #[command(subcommand)]
         command: MangabakaCommands,
     },
+    /// Run a housekeeping sweep once and exit (the same jobs `serve` schedules)
+    Sweep {
+        #[command(subcommand)]
+        command: SweepCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SweepCommands {
+    /// Reconcile verdict outcomes: resolve settled flags, flag started series
+    Reconcile {
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
+        config: PathBuf,
+    },
+    /// Scan warm library snapshots for series with unmappable external IDs
+    Unresolvable {
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
+        config: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -104,5 +123,37 @@ async fn main() -> anyhow::Result<()> {
         Commands::Mangabaka { command } => match command {
             MangabakaCommands::Refresh { config } => commands::mangabaka::refresh(config).await,
         },
+        Commands::Sweep { command } => match command {
+            SweepCommands::Reconcile { config } => commands::sweep::reconcile(config).await,
+            SweepCommands::Unresolvable { config } => commands::sweep::unresolvable(config).await,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        // Catches conflicting args, bad defaults, and malformed subcommands.
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn sweep_subcommands_parse_to_the_right_handlers() {
+        match Cli::parse_from(["shisho", "sweep", "reconcile", "-c", "x.toml"]).command {
+            Commands::Sweep {
+                command: SweepCommands::Reconcile { config },
+            } => assert_eq!(config, PathBuf::from("x.toml")),
+            _ => panic!("expected `sweep reconcile`"),
+        }
+        match Cli::parse_from(["shisho", "sweep", "unresolvable"]).command {
+            Commands::Sweep {
+                command: SweepCommands::Unresolvable { config },
+            } => assert_eq!(config, PathBuf::from(DEFAULT_CONFIG_PATH)),
+            _ => panic!("expected `sweep unresolvable`"),
+        }
     }
 }

@@ -30,6 +30,7 @@ type NavPath =
   | "/status"
   | "/profile"
   | "/settings";
+// (all domain + account nav paths; kept as a literal union for typed links)
 type NavItem = { to: NavPath; label: string };
 
 // The domain pages (the primary user's own recommendation data) show in both
@@ -38,6 +39,7 @@ const BASE_NAV: NavItem[] = [
   { to: "/", label: "Home" },
   { to: "/taste-profile", label: "Taste profile" },
   { to: "/verdicts", label: "Verdicts" },
+  { to: "/status", label: "Status" },
 ];
 
 /// The navbar entries for the current mode/role.

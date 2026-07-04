@@ -59,6 +59,10 @@ pub struct LoginState {
     /// Where to send the browser after a successful login.
     #[serde(default)]
     pub redirect_to: String,
+    /// Force a fresh Codex-key mint on callback (the Status page's regenerate
+    /// action), rather than the keep-if-valid behavior of a normal sign-in.
+    #[serde(default)]
+    pub regenerate: bool,
     pub exp: i64,
 }
 
@@ -151,6 +155,7 @@ mod tests {
             nonce: "nonce-xyz".into(),
             pkce_verifier: "verifier-123".into(),
             redirect_to: "/".into(),
+            regenerate: false,
             exp: 0,
         }
     }

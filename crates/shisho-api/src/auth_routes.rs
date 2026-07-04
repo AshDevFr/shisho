@@ -94,6 +94,10 @@ async fn me(
 struct LoginQuery {
     /// In-app path to return to after login. Sanitized to a same-site path.
     redirect_to: Option<String>,
+    /// The Status page's "regenerate" entry point: force a fresh Codex-key mint
+    /// on callback instead of the normal keep-if-valid sign-in behavior.
+    #[serde(default)]
+    regenerate: bool,
 }
 
 /// Start a login flow: build the provider redirect, stash the flow secrets in a
@@ -119,6 +123,7 @@ async fn login(
         nonce: auth.nonce,
         pkce_verifier: auth.pkce_verifier,
         redirect_to: safe_redirect(query.redirect_to.as_deref()),
+        regenerate: query.regenerate,
         exp: 0,
     };
     let token = state
@@ -194,9 +199,11 @@ async fn callback(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("provisioning user: {e}")))?;
 
     // Best-effort: mint (or refresh) the dedicated least-privilege Codex key by
-    // forwarding the one-shot IdP token exactly once. Never blocks sign-in.
+    // forwarding the one-shot IdP token exactly once. Never blocks sign-in. When
+    // the flow was the Status page's regenerate action, force a fresh mint even
+    // if the stored key is still valid.
     if let Some(idp_token) = passthrough {
-        mint_codex_key(&state, &user.id, idp_token).await;
+        mint_codex_key(&state, &user.id, idp_token, login_state.regenerate).await;
     }
 
     // Issue the session cookie and return the browser to the app.
@@ -208,13 +215,15 @@ async fn callback(
     Ok((jar, Redirect::to(&login_state.redirect_to)))
 }
 
-/// Best-effort Codex key upkeep at sign-in. Ensures the user has a usable
-/// least-privilege key, minting one only when none is stored or the stored one
-/// was revoked — so a normal sign-in does not orphan a fresh key in Codex on
-/// every visit, while a revoked key recovers. Requires at-rest encryption (a DEK
-/// to seal with) and a configured Codex; any failure is logged and sign-in
-/// proceeds. Never propagates an error, and never logs the token.
-async fn mint_codex_key(state: &AppState, user_id: &str, idp_token: String) {
+/// Best-effort Codex key upkeep at sign-in. Normally ensures the user has a
+/// usable least-privilege key, minting one only when none is stored or the
+/// stored one was revoked — so a normal sign-in does not orphan a fresh key in
+/// Codex on every visit, while a revoked key recovers. When `force` is set (the
+/// Status page's regenerate action), always mints a replacement and swaps it in
+/// atomically. Requires at-rest encryption (a DEK to seal with) and a configured
+/// Codex; any failure is logged and sign-in proceeds. Never propagates an error,
+/// and never logs the token.
+async fn mint_codex_key(state: &AppState, user_id: &str, idp_token: String, force: bool) {
     use shisho_services::codex_identity::KeyOutcome;
 
     let Some(dek) = state.dek.as_ref() else {
@@ -225,15 +234,26 @@ async fn mint_codex_key(state: &AppState, user_id: &str, idp_token: String) {
         tracing::debug!("codex not configured; skipping Codex key mint");
         return;
     };
+    let authz = shisho_codex::CodexCredential::Bearer(idp_token);
+    let key_version = state.cfg.encryption.key_version;
+
+    if force {
+        match identity
+            .regenerate(&state.db, dek, key_version, user_id, &authz, "shisho")
+            .await
+        {
+            Ok(sub) => {
+                tracing::info!(user_id, codex_user_sub = %sub, "regenerated the Codex key")
+            }
+            Err(e) => {
+                tracing::warn!(user_id, error = %e, "Codex key regenerate failed; sign-in proceeds")
+            }
+        }
+        return;
+    }
+
     match identity
-        .ensure_key(
-            &state.db,
-            dek,
-            state.cfg.encryption.key_version,
-            user_id,
-            &shisho_codex::CodexCredential::Bearer(idp_token),
-            "shisho",
-        )
+        .ensure_key(&state.db, dek, key_version, user_id, &authz, "shisho")
         .await
     {
         Ok(KeyOutcome::Kept) => {

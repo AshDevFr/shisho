@@ -10,6 +10,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SetupPage } from "@/pages/SetupPage";
+import { StatusPage } from "@/pages/StatusPage";
 import { TasteProfilePage } from "@/pages/TasteProfilePage";
 import { VerdictsPage } from "@/pages/VerdictsPage";
 
@@ -70,6 +71,13 @@ const verdictsRoute = createRoute({
   component: VerdictsPage,
 });
 
+// Operational status: health, dump refresh, unresolvable list, key regenerate.
+const statusRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/status",
+  component: StatusPage,
+});
+
 // Instance settings: the Admin page in multi-user mode, the flat Settings page
 // in single-user mode.
 const settingsRoute = createRoute({
@@ -85,6 +93,7 @@ const routeTree = rootRoute.addChildren([
     homeRoute,
     tasteProfileRoute,
     verdictsRoute,
+    statusRoute,
     profileRoute,
     settingsRoute,
   ]),

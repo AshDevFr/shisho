@@ -18,11 +18,14 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
-window.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-})) as unknown as typeof ResizeObserver;
+// A real class (not an arrow-returning vi.fn) so components that do
+// `new ResizeObserver()` — Mantine's Select/ScrollArea — can construct it.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+window.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 
 window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
 

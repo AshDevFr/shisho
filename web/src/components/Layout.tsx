@@ -37,6 +37,7 @@ type NavItem = { to: NavPath; label: string };
 const BASE_NAV: NavItem[] = [
   { to: "/", label: "Home" },
   { to: "/taste-profile", label: "Taste profile" },
+  { to: "/verdicts", label: "Verdicts" },
 ];
 
 /// The navbar entries for the current mode/role.

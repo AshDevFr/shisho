@@ -11,6 +11,7 @@ import { ProfilePage } from "@/pages/ProfilePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SetupPage } from "@/pages/SetupPage";
 import { TasteProfilePage } from "@/pages/TasteProfilePage";
+import { VerdictsPage } from "@/pages/VerdictsPage";
 
 // Code-based routing keeps the scaffold self-contained (no router codegen
 // plugin). Switch to file-based routing later if the route tree grows.
@@ -62,6 +63,13 @@ const tasteProfileRoute = createRoute({
   component: TasteProfilePage,
 });
 
+// The append-only verdict log with outcome correction. Both auth modes.
+const verdictsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/verdicts",
+  component: VerdictsPage,
+});
+
 // Instance settings: the Admin page in multi-user mode, the flat Settings page
 // in single-user mode.
 const settingsRoute = createRoute({
@@ -76,6 +84,7 @@ const routeTree = rootRoute.addChildren([
   layoutRoute.addChildren([
     homeRoute,
     tasteProfileRoute,
+    verdictsRoute,
     profileRoute,
     settingsRoute,
   ]),

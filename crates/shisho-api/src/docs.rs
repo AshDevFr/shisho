@@ -18,6 +18,8 @@ use utoipa::OpenApi;
         super::profile::edit_profile,
         super::profile::approve_proposal,
         super::profile::reject_proposal,
+        super::verdicts::list_verdicts,
+        super::verdicts::record_outcome,
         super::admin_routes::list_users,
         super::admin_routes::deactivate_user,
         super::admin_routes::activate_user,
@@ -41,6 +43,9 @@ use utoipa::OpenApi;
         super::profile::PendingProposalDto,
         super::profile::VersionDto,
         super::profile::EditProfileRequest,
+        super::verdicts::VerdictDto,
+        super::verdicts::SessionGroup,
+        super::verdicts::RecordOutcomeRequest,
         super::admin_routes::AdminUser,
         super::admin_routes::EncryptionStatus,
         shisho_auth::keys::Scope,
@@ -50,6 +55,7 @@ use utoipa::OpenApi;
         (name = "keys", description = "API key management. Requires the keys:manage scope. Scopes are granular resource:action strings; the aliases read/write/admin are accepted on creation and expanded."),
         (name = "connections", description = "Connected-application (OAuth grant) management. Lists the OAuth clients holding a live grant on the caller's account and revokes one. Requires the keys:manage scope, so a browser session qualifies but a connector's own token does not."),
         (name = "profile", description = "Taste-profile management: read the current profile and version history, edit it directly, and approve or reject pending consolidation proposals. Reads require profile:read, writes profile:write."),
+        (name = "verdicts", description = "Verdict-log browsing and outcome recording. Lists the append-only recommendation log filtered and grouped by session, and records a reading outcome (appended as a feedback row, never an in-place edit). Reads require verdicts:read, the outcome append verdicts:write."),
         (name = "admin", description = "Admin-only operations. In single-user mode the sole operator is the admin; in multi-user mode admin is the admin_emails/admin_groups allowlists, or the first provisioned user when both are empty."),
         (name = "setup", description = "First-run setup wizard. Token-gated and available only on an unconfigured instance; every route 404s once a credential is configured.")
     )

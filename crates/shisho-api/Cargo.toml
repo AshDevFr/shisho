@@ -17,6 +17,7 @@ test-util = ["shisho-auth/test-util", "dep:tempfile"]
 [dependencies]
 shisho-auth = { workspace = true }
 shisho-codex = { workspace = true }
+shisho-ids = { workspace = true }
 shisho-config = { workspace = true }
 shisho-tsundoku = { workspace = true }
 shisho-mangabaka = { workspace = true }

@@ -135,6 +135,7 @@ pub const VALID_SCOPES: &[&str] = &[
     "candidates:read",
     "lookup:read",
     "library:read",
+    "verdicts:read",
     "verdicts:write",
     "profile:read",
     "profile:write",
@@ -170,6 +171,10 @@ impl Scope {
         resource: Resource::Library,
         action: Action::Read,
     };
+    pub const VERDICTS_READ: Scope = Scope {
+        resource: Resource::Verdicts,
+        action: Action::Read,
+    };
     pub const VERDICTS_WRITE: Scope = Scope {
         resource: Resource::Verdicts,
         action: Action::Write,
@@ -198,6 +203,7 @@ impl Scope {
             Scope::CANDIDATES_READ,
             Scope::LOOKUP_READ,
             Scope::LIBRARY_READ,
+            Scope::VERDICTS_READ,
             Scope::VERDICTS_WRITE,
             Scope::PROFILE_READ,
             Scope::PROFILE_WRITE,

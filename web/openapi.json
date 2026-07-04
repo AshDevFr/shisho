@@ -1047,6 +1047,203 @@
         }
       }
     },
+    "/api/v1/verdicts": {
+      "get": {
+        "tags": [
+          "verdicts"
+        ],
+        "summary": "The caller's verdict log, filtered and grouped by session (most recent\nsession first). The whole log is small by construction, so filtering and\ngrouping happen in memory.",
+        "operationId": "list_verdicts",
+        "parameters": [
+          {
+            "name": "tier",
+            "in": "query",
+            "description": "Exact tier match (e.g. \"S\", \"A\", \"pass\", \"feedback\").",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "verified",
+            "in": "query",
+            "description": "Only verified (true) or unverified (false) rows.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "retracted",
+            "in": "query",
+            "description": "Only retracted (true) or standing (false) rows.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "Exact outcome match (e.g. \"loved\", \"dropped\").",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionGroup"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/verdicts/{id}/outcome": {
+      "post": {
+        "tags": [
+          "verdicts"
+        ],
+        "summary": "Record a reading outcome for the series a verdict points at. Appends a\nfeedback row (the log stays append-only) and closes any open reconciliation\nquestion on the series.",
+        "operationId": "record_outcome",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "the verdict whose series the outcome is for",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerdictDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/whoami": {
       "get": {
         "tags": [
@@ -1464,6 +1661,26 @@
           }
         }
       },
+      "RecordOutcomeRequest": {
+        "type": "object",
+        "description": "The reading outcome to record for a series.",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional free-form notes on why."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "What happened (e.g. \"loved\", \"liked\", \"dropped\", \"mixed\")."
+          }
+        }
+      },
       "Scope": {
         "type": "string",
         "description": "API key permission as `resource:action`.",
@@ -1475,11 +1692,36 @@
           "candidates:read",
           "lookup:read",
           "library:read",
+          "verdicts:read",
           "verdicts:write",
           "profile:read",
           "profile:write",
           "status:read"
         ]
+      },
+      "SessionGroup": {
+        "type": "object",
+        "description": "One recommendation session's rows, grouped together.",
+        "required": [
+          "sessionId",
+          "startedAt",
+          "verdicts"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "description": "The earliest row in the session (ISO 8601)."
+          },
+          "verdicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerdictDto"
+            }
+          }
+        }
       },
       "SetupKeyResponse": {
         "type": "object",
@@ -1510,6 +1752,66 @@
             "type": "integer",
             "description": "Number of `[[auth.providers]]` already present in config.",
             "minimum": 0
+          }
+        }
+      },
+      "VerdictDto": {
+        "type": "object",
+        "description": "One verdict-log row, as the UI renders it.",
+        "required": [
+          "id",
+          "tier",
+          "rationale",
+          "verified",
+          "retracted",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reading outcome recorded on this row (feedback rows carry it)."
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "retracted": {
+            "type": "boolean"
+          },
+          "retractionReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`failedVerification` (stays excluded from pools) or `withdrawn` (returns\nto candidacy), when retracted."
+          },
+          "seriesId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Canonical `provider:id` (or `mangabaka:<id>`) when the row carries a\nseries identity, else absent."
+          },
+          "tier": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
           }
         }
       },
@@ -1594,6 +1896,10 @@
     {
       "name": "profile",
       "description": "Taste-profile management: read the current profile and version history, edit it directly, and approve or reject pending consolidation proposals. Reads require profile:read, writes profile:write."
+    },
+    {
+      "name": "verdicts",
+      "description": "Verdict-log browsing and outcome recording. Lists the append-only recommendation log filtered and grouped by session, and records a reading outcome (appended as a feedback row, never an in-place edit). Reads require verdicts:read, the outcome append verdicts:write."
     },
     {
       "name": "admin",

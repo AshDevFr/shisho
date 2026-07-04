@@ -3942,6 +3942,7 @@ dependencies = [
  "shisho-codex",
  "shisho-config",
  "shisho-db",
+ "shisho-ids",
  "shisho-mangabaka",
  "shisho-oauth",
  "shisho-services",

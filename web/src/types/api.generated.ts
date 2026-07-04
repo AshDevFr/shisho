@@ -307,6 +307,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/verdicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's verdict log, filtered and grouped by session (most recent
+         *     session first). The whole log is small by construction, so filtering and
+         *     grouping happen in memory.
+         */
+        get: operations["list_verdicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/verdicts/{id}/outcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a reading outcome for the series a verdict points at. Appends a
+         *     feedback row (the log stays append-only) and closes any open reconciliation
+         *     question on the series.
+         */
+        post: operations["record_outcome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/whoami": {
         parameters: {
             query?: never;
@@ -472,11 +514,25 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        /** @description The reading outcome to record for a series. */
+        RecordOutcomeRequest: {
+            /** @description Optional free-form notes on why. */
+            notes?: string | null;
+            /** @description What happened (e.g. "loved", "liked", "dropped", "mixed"). */
+            outcome: string;
+        };
         /**
          * @description API key permission as `resource:action`.
          * @enum {string}
          */
-        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read";
+        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read";
+        /** @description One recommendation session's rows, grouped together. */
+        SessionGroup: {
+            sessionId: string;
+            /** @description The earliest row in the session (ISO 8601). */
+            startedAt: string;
+            verdicts: components["schemas"]["VerdictDto"][];
+        };
         /** @description The revealed admin key. Returned exactly once. */
         SetupKeyResponse: {
             /** @description Plaintext admin API key. Store it now; it is never shown again. */
@@ -488,6 +544,29 @@ export interface components {
             authMode: string;
             /** @description Number of `[[auth.providers]]` already present in config. */
             providersConfigured: number;
+        };
+        /** @description One verdict-log row, as the UI renders it. */
+        VerdictDto: {
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            notes?: string | null;
+            /** @description The reading outcome recorded on this row (feedback rows carry it). */
+            outcome?: string | null;
+            rationale: string;
+            retracted: boolean;
+            /**
+             * @description `failedVerification` (stays excluded from pools) or `withdrawn` (returns
+             *     to candidacy), when retracted.
+             */
+            retractionReason?: string | null;
+            /**
+             * @description Canonical `provider:id` (or `mangabaka:<id>`) when the row carries a
+             *     series identity, else absent.
+             */
+            seriesId?: string | null;
+            tier: string;
+            verified: boolean;
         };
         /** @description One entry in the version history, with its rendered diff. */
         VersionDto: {
@@ -1286,6 +1365,116 @@ export interface operations {
             };
             /** @description Setup is closed or the token is wrong */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_verdicts: {
+        parameters: {
+            query?: {
+                /** @description Exact tier match (e.g. "S", "A", "pass", "feedback"). */
+                tier?: string | null;
+                /** @description Only verified (true) or unverified (false) rows. */
+                verified?: boolean | null;
+                /** @description Only retracted (true) or standing (false) rows. */
+                retracted?: boolean | null;
+                /** @description Exact outcome match (e.g. "loved", "dropped"). */
+                outcome?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionGroup"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    record_outcome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description the verdict whose series the outcome is for */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordOutcomeRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerdictDto"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

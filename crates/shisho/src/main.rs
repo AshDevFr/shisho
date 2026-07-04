@@ -55,6 +55,21 @@ enum Commands {
         #[command(subcommand)]
         command: SweepCommands,
     },
+    /// Weekly-report helpers for the headless `claude -p` runner
+    Report {
+        #[command(subcommand)]
+        command: ReportCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReportCommands {
+    /// Render the weekly-report prompt to stdout (pipe it into `claude -p`)
+    Prompt {
+        /// Session id for this run's verdicts (default: `weekly-<today>`)
+        #[arg(short, long)]
+        session: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -126,6 +141,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Sweep { command } => match command {
             SweepCommands::Reconcile { config } => commands::sweep::reconcile(config).await,
             SweepCommands::Unresolvable { config } => commands::sweep::unresolvable(config).await,
+        },
+        Commands::Report { command } => match command {
+            ReportCommands::Prompt { session } => commands::report::prompt(session),
         },
     }
 }

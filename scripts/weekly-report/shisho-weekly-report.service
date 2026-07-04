@@ -1,0 +1,22 @@
+# Example oneshot unit for the Shisho weekly report. Adjust paths, install
+# as /etc/systemd/system/shisho-weekly-report.service, then enable the
+# matching timer:
+#   systemctl daemon-reload
+#   systemctl enable --now shisho-weekly-report.timer
+# Dry run / on demand:
+#   systemctl start shisho-weekly-report.service
+
+[Unit]
+Description=Shisho weekly recommendation report (claude -p)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# The cron environment owns the credential; Shisho never stores it.
+# weekly-report.env sets SHISHO_MCP_URL and SHISHO_BEARER_FILE (0600 root-
+# readable file holding the Codex API key), optionally REPORT_DIR.
+EnvironmentFile=/etc/shisho/weekly-report.env
+ExecStart=/opt/shisho/scripts/weekly-report/run-weekly-report.sh
+# Run as the user whose home holds the claude CLI auth + report dir.
+User=shisho

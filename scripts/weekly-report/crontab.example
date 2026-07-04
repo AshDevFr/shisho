@@ -1,0 +1,11 @@
+# Example crontab entry for the Shisho weekly report (prefer the systemd
+# timer when available — it gives you Persistent= catch-up and unit-level
+# failure alerting).
+#
+# /etc/shisho/weekly-report.env exports SHISHO_MCP_URL and SHISHO_BEARER
+# (or SHISHO_BEARER_FILE); keep it 0600. The script exits non-zero on any
+# failure, so cron's MAILTO (or your wrapper) notifies — never a silently
+# skipped week.
+
+# m  h  dom mon dow  command
+0    7  *   *   1    . /etc/shisho/weekly-report.env && /opt/shisho/scripts/weekly-report/run-weekly-report.sh >> /var/log/shisho-weekly-report.log 2>&1

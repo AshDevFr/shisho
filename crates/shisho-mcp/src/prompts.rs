@@ -27,6 +27,9 @@ use crate::McpService;
 pub const RECOMMEND: &str = "recommend.md.j2";
 /// Template name for the consolidation-session prompt.
 pub const CONSOLIDATE: &str = "consolidate.md.j2";
+/// Template name for the unattended weekly-report prompt (rendered for the
+/// headless `claude -p` runner, not registered as an MCP prompt).
+pub const WEEKLY_REPORT: &str = "weekly_report.md.j2";
 
 /// The embedded `prompts/` tree (release-embedded; the files are the source
 /// of truth for all prompt/instruction copy).
@@ -109,6 +112,27 @@ pub fn recommend(ctx: &RecommendContext) -> Result<String, PromptError> {
 /// Render the consolidation-session prompt.
 pub fn consolidate() -> Result<String, PromptError> {
     render(CONSOLIDATE, ConsolidateContext::default())
+}
+
+/// Context for the weekly-report prompt: the session id every verdict of the
+/// run is grouped under (typically `weekly-<date>`). Field name matches the
+/// template's `{{ session_id }}` (snake_case), so no serde rename.
+#[derive(Debug, Serialize)]
+pub struct WeeklyReportContext {
+    pub session_id: String,
+}
+
+/// Render the unattended weekly-report prompt. Not an MCP prompt — the headless
+/// `claude -p` runner renders it (via the `shisho report prompt` CLI) and pipes
+/// it in, so the prompt stays data (a `.md.j2`), never an inline string in the
+/// runner or in Rust.
+pub fn weekly_report(session_id: &str) -> Result<String, PromptError> {
+    render(
+        WEEKLY_REPORT,
+        WeeklyReportContext {
+            session_id: session_id.to_owned(),
+        },
+    )
 }
 
 /// Optional session parameters accepted by the `recommend` prompt (mirrors
@@ -208,6 +232,17 @@ mod tests {
         assert!(out.contains("# Consolidation session"));
         assert!(out.contains("## Workflow"));
         assert!(out.contains("propose_profile_update"));
+    }
+
+    #[test]
+    fn weekly_report_renders_with_the_session_id_injected() {
+        let out = weekly_report("weekly-2026-06-15").expect("render");
+        assert!(out.contains("# Shisho weekly recommendation report"));
+        assert!(out.contains("## Report format"));
+        // The session id is interpolated everywhere the template references it.
+        assert!(out.contains("weekly-2026-06-15"));
+        // And there's no unresolved template variable left behind.
+        assert!(!out.contains("{{"), "unrendered variable remains: {out}");
     }
 
     #[test]

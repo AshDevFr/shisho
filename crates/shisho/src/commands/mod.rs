@@ -3,6 +3,7 @@ pub mod mangabaka;
 pub mod mcp;
 pub mod migrate;
 pub mod openapi;
+pub mod report;
 pub mod serve;
 pub mod sweep;
 

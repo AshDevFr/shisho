@@ -1,0 +1,18 @@
+# Example timer for the Shisho weekly report. Install next to the service
+# unit and enable with:
+#   systemctl enable --now shisho-weekly-report.timer
+# A failed run leaves the service in a failed state (the script exits
+# non-zero), so existing systemd failure alerting (e.g. OnFailure= or a
+# SigNoz/journald watcher) picks it up — never a silently skipped week.
+
+[Unit]
+Description=Run the Shisho weekly report every Monday morning
+
+[Timer]
+OnCalendar=Mon *-*-* 07:00:00
+# Catch up after downtime instead of skipping the week.
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

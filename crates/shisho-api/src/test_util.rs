@@ -59,3 +59,34 @@ pub async fn test_state_with_registry(
         services: None,
     })
 }
+
+/// An `AppState` with the domain surface fully wired against a Codex instance at
+/// `codex_base_url` (a wiremock URI in tests): a DEK, the Codex identity
+/// resolver, and the service registry. Multi-user mode, so per-user tools thread
+/// a `user_id`. For end-to-end MCP / domain tests that need real `UserCtx`
+/// resolution over a stored, encrypted Codex credential.
+pub async fn test_state_with_codex(codex_base_url: &str) -> Arc<AppState> {
+    let mut cfg = AppConfig::default();
+    cfg.auth.mode = shisho_config::AuthMode::MultiUser;
+    cfg.codex.base_url = codex_base_url.to_owned();
+    // API-only MangaBaka (no dump, no fallback): resolves nothing, touches no
+    // disk — the domain builds without a backbone dump in tests.
+    cfg.mangabaka.api_fallback = false;
+    cfg.mangabaka.offline_dump_url = None;
+
+    let db = test_db().await;
+    let dek = shisho_db::Dek::from_bytes([7u8; 32]);
+    let services = crate::build_services(&cfg, db.clone())
+        .await
+        .expect("building test services");
+    Arc::new(AppState {
+        db,
+        codex_identity: crate::build_codex_identity(&cfg),
+        services,
+        cfg,
+        providers: Arc::new(ProviderRegistry::empty()),
+        session: SessionKeys::for_test(TEST_SESSION_SECRET),
+        setup: Arc::new(crate::setup::SetupState::disabled()),
+        dek: Some(dek),
+    })
+}

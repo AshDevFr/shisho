@@ -39,6 +39,7 @@ sea-orm.workspace = true
 tower = { workspace = true, features = ["util"] }
 http-body-util.workspace = true
 chrono.workspace = true
+wiremock = "0.6"
 # Client side of rmcp, used by the transport integration tests.
 rmcp = { workspace = true, features = [
     "client",

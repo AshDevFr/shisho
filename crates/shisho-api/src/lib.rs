@@ -15,6 +15,7 @@ pub mod oauth_routes;
 pub mod profile;
 pub mod setup;
 pub mod static_files;
+pub mod status;
 pub mod verdicts;
 pub mod whoami;
 
@@ -188,6 +189,8 @@ fn build_router(state: Arc<AppState>, extra_example_scoped: Router<Arc<AppState>
         .nest("/profile", profile::router())
         // Verdict-log browsing + outcome recording; own verdicts:read/write guard.
         .nest("/verdicts", verdicts::router())
+        // Operational status + dump-refresh action; own status:read/write guard.
+        .nest("/status", status::router())
         // Admin routes self-gate on require_admin inside each handler.
         .merge(admin_routes::router())
         .layer(axum::middleware::from_fn_with_state(

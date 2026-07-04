@@ -12,7 +12,6 @@
 //! Each tool declares its required scope in [`crate::service::required_scope`].
 
 pub mod candidates;
-pub mod health;
 pub mod library;
 pub mod lookup;
 pub mod profile;

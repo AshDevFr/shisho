@@ -140,6 +140,7 @@ pub const VALID_SCOPES: &[&str] = &[
     "profile:read",
     "profile:write",
     "status:read",
+    "status:write",
 ];
 
 impl Scope {
@@ -191,6 +192,10 @@ impl Scope {
         resource: Resource::Status,
         action: Action::Read,
     };
+    pub const STATUS_WRITE: Scope = Scope {
+        resource: Resource::Status,
+        action: Action::Write,
+    };
 
     /// Every valid scope. Used by the `admin` alias and the config-key
     /// superuser path.
@@ -208,6 +213,7 @@ impl Scope {
             Scope::PROFILE_READ,
             Scope::PROFILE_WRITE,
             Scope::STATUS_READ,
+            Scope::STATUS_WRITE,
         ]
     }
 

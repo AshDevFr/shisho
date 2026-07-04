@@ -8,11 +8,11 @@ use rmcp::model::CallToolResult;
 use rmcp::{ErrorData, tool, tool_router};
 use serde::Serialize;
 
-use super::health::{self, HealthResponse};
 use super::{CODEX_KEY_REVOKED, swr_codex_unauthorized, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_db::repos::reconciliation;
+use shisho_services::health::{self, HealthResponse};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

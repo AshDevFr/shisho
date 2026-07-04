@@ -1047,6 +1047,111 @@
         }
       }
     },
+    "/api/v1/status": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "summary": "Assemble the caller's operational status.",
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/status/dump-refresh": {
+      "post": {
+        "tags": [
+          "status"
+        ],
+        "summary": "Trigger a MangaBaka dump refresh in the background. Returns immediately; the\nrefresh (download + ingest) runs to completion asynchronously and the\nprovider serializes overlapping runs. Poll `GET /status` for `refreshRunning`\nand the new dump age.",
+        "operationId": "trigger_dump_refresh",
+        "responses": {
+          "202": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/verdicts": {
       "get": {
         "tags": [
@@ -1375,6 +1480,49 @@
           }
         }
       },
+      "BackendHealth": {
+        "type": "object",
+        "required": [
+          "configured",
+          "reachable",
+          "required"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "required": {
+            "type": "boolean",
+            "description": "Codex is the required tier; Tsundoku is an enhancement."
+          }
+        }
+      },
+      "CacheHealth": {
+        "type": "object",
+        "properties": {
+          "librarySnapshotLastWarmedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tsundokuLastWarmedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ConnectionResponse": {
         "type": "object",
         "description": "A client holding a live grant on the current user's account.",
@@ -1466,6 +1614,17 @@
             "items": {
               "$ref": "#/components/schemas/Scope"
             }
+          }
+        }
+      },
+      "DbHealth": {
+        "type": "object",
+        "required": [
+          "reachable"
+        ],
+        "properties": {
+          "reachable": {
+            "type": "boolean"
           }
         }
       },
@@ -1566,6 +1725,40 @@
           }
         }
       },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "db",
+          "codex",
+          "tsundoku",
+          "mangabaka",
+          "caches"
+        ],
+        "properties": {
+          "caches": {
+            "$ref": "#/components/schemas/CacheHealth",
+            "description": "Last successful SWR cache loads."
+          },
+          "codex": {
+            "$ref": "#/components/schemas/BackendHealth"
+          },
+          "db": {
+            "$ref": "#/components/schemas/DbHealth"
+          },
+          "mangabaka": {
+            "$ref": "#/components/schemas/MangabakaHealth",
+            "description": "The MangaBaka metadata backbone (dump + API fallback)."
+          },
+          "status": {
+            "type": "string",
+            "description": "`ok` | `degraded` | `unavailable`."
+          },
+          "tsundoku": {
+            "$ref": "#/components/schemas/BackendHealth"
+          }
+        }
+      },
       "InfoResponse": {
         "type": "object",
         "description": "Instance metadata. Field names are part of the public API contract\n(`auth_mode` is snake_case by convention).",
@@ -1587,6 +1780,108 @@
           "version": {
             "type": "string",
             "example": "0.1.0"
+          }
+        }
+      },
+      "LibraryStatus": {
+        "type": "object",
+        "required": [
+          "asOf",
+          "seriesCount",
+          "unresolvableCount",
+          "unresolvable"
+        ],
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "description": "Age of the cached snapshot (ISO 8601)."
+          },
+          "seriesCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unresolvable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnresolvableEntry"
+            }
+          },
+          "unresolvableCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MangabakaHealth": {
+        "type": "object",
+        "description": "Backbone state: the dump is the healthy mode; API-only (dump not loaded)\nreports degraded so a first deploy knows to run the initial ingest.",
+        "required": [
+          "dumpLoaded",
+          "refreshRunning",
+          "negativeCacheSize",
+          "apiFallback"
+        ],
+        "properties": {
+          "apiFallback": {
+            "type": "boolean"
+          },
+          "dumpLoaded": {
+            "type": "boolean"
+          },
+          "dumpModifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastRefreshAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastRefreshError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "negativeCacheSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "refreshRunning": {
+            "type": "boolean"
+          },
+          "seriesRows": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "MintedKeyStatus": {
+        "type": "object",
+        "description": "The caller's minted Codex key state. `present` says a key is stored; the UI\noffers the OIDC re-auth \"regenerate\" flow when the user wants a fresh one (or\nwhen it has been revoked and the per-user surfaces started failing).",
+        "required": [
+          "present"
+        ],
+        "properties": {
+          "codexUserSub": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The resolved `codex_user_sub`, when a key is stored."
+          },
+          "present": {
+            "type": "boolean",
+            "description": "A Codex key is stored for this user."
           }
         }
       },
@@ -1696,7 +1991,8 @@
           "verdicts:write",
           "profile:read",
           "profile:write",
-          "status:read"
+          "status:read",
+          "status:write"
         ]
       },
       "SessionGroup": {
@@ -1752,6 +2048,65 @@
             "type": "integer",
             "description": "Number of `[[auth.providers]]` already present in config.",
             "minimum": 0
+          }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "description": "The caller's operational status.",
+        "required": [
+          "health",
+          "mintedKey"
+        ],
+        "properties": {
+          "health": {
+            "$ref": "#/components/schemas/HealthResponse",
+            "description": "Backend reachability + cache freshness + backbone state (mirrors the MCP\n`status` tool and the health probe)."
+          },
+          "library": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LibraryStatus",
+                "description": "The caller's library snapshot view, when a warm snapshot exists (built on\ntheir last authenticated touch). Absent when none is cached — no Codex\ncall is made from this browser session."
+              }
+            ]
+          },
+          "mintedKey": {
+            "$ref": "#/components/schemas/MintedKeyStatus",
+            "description": "The caller's minted Codex key state."
+          }
+        }
+      },
+      "UnresolvableEntry": {
+        "type": "object",
+        "required": [
+          "seriesId",
+          "title",
+          "rawSources"
+        ],
+        "properties": {
+          "codexUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deep link to the series in Codex, where metadata matching is fixed\n(PRD Principle 8: fix at the source, never patch mappings locally)."
+          },
+          "rawSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The raw `source:externalId` strings that failed to map, verbatim."
+          },
+          "seriesId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         }
       },
@@ -1900,6 +2255,10 @@
     {
       "name": "verdicts",
       "description": "Verdict-log browsing and outcome recording. Lists the append-only recommendation log filtered and grouped by session, and records a reading outcome (appended as a feedback row, never an in-place edit). Reads require verdicts:read, the outcome append verdicts:write."
+    },
+    {
+      "name": "status",
+      "description": "Operational status: backend reachability, cache freshness, MangaBaka dump age + refresh state, the caller's unresolvable-series list (with Codex deep links), and minted-key state. The dump-refresh action runs in the background. Reads require status:read, the refresh action status:write."
     },
     {
       "name": "admin",

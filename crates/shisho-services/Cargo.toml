@@ -23,6 +23,7 @@ sha2.workspace = true
 hex.workspace = true
 chrono.workspace = true
 schemars.workspace = true
+utoipa.workspace = true
 serde.workspace = true
 sea-orm.workspace = true
 tokio.workspace = true

@@ -1,24 +1,23 @@
-//! Backend reachability probe behind the `status()` tool: db ping plus
-//! per-backend reachability (Codex `/api/v1/info`, Tsundoku `/api/v1/health`)
-//! and the MangaBaka backbone state. A down or unconfigured backend degrades the
-//! report, it never fails it; only an unreachable database is fatal.
+//! Backend reachability probe: db ping plus per-backend reachability (Codex
+//! `/api/v1/info`, Tsundoku `/api/v1/health`) and the MangaBaka backbone state.
+//! A down or unconfigured backend degrades the report, it never fails it; only
+//! an unreachable database is fatal.
 //!
-//! In `shisho-old` this backed the `/healthz` endpoint over `AppState`. Here the
-//! `/healthz` route is the shell's; this provides the content over the domain
-//! handles (`&Services` + the DB), which is all it actually needs — no
-//! dependency on the shell's `AppState`.
+//! One probe over `(db, &Services)`, shared by the MCP `status` tool and the
+//! REST `/status` endpoint — no dependency on either shell's app state.
 
 use chrono::{DateTime, Utc};
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
+use utoipa::ToSchema;
 
-use shisho_services::Services;
+use crate::Services;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthResponse {
     /// `ok` | `degraded` | `unavailable`.
-    pub status: &'static str,
+    pub status: String,
     pub db: DbHealth,
     pub codex: BackendHealth,
     pub tsundoku: BackendHealth,
@@ -30,7 +29,7 @@ pub struct HealthResponse {
 
 /// Backbone state: the dump is the healthy mode; API-only (dump not loaded)
 /// reports degraded so a first deploy knows to run the initial ingest.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MangabakaHealth {
     pub dump_loaded: bool,
@@ -47,13 +46,13 @@ pub struct MangabakaHealth {
     pub api_fallback: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DbHealth {
     pub reachable: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendHealth {
     pub configured: bool,
@@ -64,7 +63,7 @@ pub struct BackendHealth {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CacheHealth {
     pub library_snapshot_last_warmed_at: Option<String>,
@@ -158,7 +157,7 @@ pub async fn probe(db: &DatabaseConnection, services: &Services) -> HealthRespon
     }
 
     HealthResponse {
-        status,
+        status: status.to_owned(),
         db,
         codex,
         tsundoku,

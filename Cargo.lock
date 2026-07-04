@@ -4173,6 +4173,7 @@ dependencies = [
  "tokio",
  "tokio-cron-scheduler",
  "tracing",
+ "utoipa",
  "uuid",
  "wiremock",
 ]

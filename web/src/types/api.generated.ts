@@ -307,6 +307,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assemble the caller's operational status. */
+        get: operations["get_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/status/dump-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger a MangaBaka dump refresh in the background. Returns immediately; the
+         *     refresh (download + ingest) runs to completion asynchronously and the
+         *     provider serializes overlapping runs. Poll `GET /status` for `refreshRunning`
+         *     and the new dump age.
+         */
+        post: operations["trigger_dump_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/verdicts": {
         parameters: {
             query?: never;
@@ -391,6 +430,17 @@ export interface components {
             name: string;
             scopes: components["schemas"]["Scope"][];
         };
+        BackendHealth: {
+            configured: boolean;
+            error?: string | null;
+            reachable: boolean;
+            /** @description Codex is the required tier; Tsundoku is an enhancement. */
+            required: boolean;
+        };
+        CacheHealth: {
+            librarySnapshotLastWarmedAt?: string | null;
+            tsundokuLastWarmedAt?: string | null;
+        };
         /** @description A client holding a live grant on the current user's account. */
         ConnectionResponse: {
             clientId: string;
@@ -424,6 +474,9 @@ export interface components {
             key: string;
             name: string;
             scopes: components["schemas"]["Scope"][];
+        };
+        DbHealth: {
+            reachable: boolean;
         };
         /**
          * @description A direct edit: the full replacement content, optionally pinned to the version
@@ -470,6 +523,17 @@ export interface components {
         Health: {
             status: string;
         };
+        HealthResponse: {
+            /** @description Last successful SWR cache loads. */
+            caches: components["schemas"]["CacheHealth"];
+            codex: components["schemas"]["BackendHealth"];
+            db: components["schemas"]["DbHealth"];
+            /** @description The MangaBaka metadata backbone (dump + API fallback). */
+            mangabaka: components["schemas"]["MangabakaHealth"];
+            /** @description `ok` | `degraded` | `unavailable`. */
+            status: string;
+            tsundoku: components["schemas"]["BackendHealth"];
+        };
         /**
          * @description Instance metadata. Field names are part of the public API contract
          *     (`auth_mode` is snake_case by convention).
@@ -484,6 +548,41 @@ export interface components {
             name: string;
             /** @example 0.1.0 */
             version: string;
+        };
+        LibraryStatus: {
+            /** @description Age of the cached snapshot (ISO 8601). */
+            asOf: string;
+            seriesCount: number;
+            unresolvable: components["schemas"]["UnresolvableEntry"][];
+            unresolvableCount: number;
+        };
+        /**
+         * @description Backbone state: the dump is the healthy mode; API-only (dump not loaded)
+         *     reports degraded so a first deploy knows to run the initial ingest.
+         */
+        MangabakaHealth: {
+            apiFallback: boolean;
+            dumpLoaded: boolean;
+            /** Format: date-time */
+            dumpModifiedAt?: string | null;
+            /** Format: date-time */
+            lastRefreshAt?: string | null;
+            lastRefreshError?: string | null;
+            negativeCacheSize: number;
+            refreshRunning: boolean;
+            /** Format: int64 */
+            seriesRows?: number | null;
+        };
+        /**
+         * @description The caller's minted Codex key state. `present` says a key is stored; the UI
+         *     offers the OIDC re-auth "regenerate" flow when the user wants a fresh one (or
+         *     when it has been revoked and the per-user surfaces started failing).
+         */
+        MintedKeyStatus: {
+            /** @description The resolved `codex_user_sub`, when a key is stored. */
+            codexUserSub?: string | null;
+            /** @description A Codex key is stored for this user. */
+            present: boolean;
         };
         /** @description A stored pending proposal (a `consolidate` output awaiting review). */
         PendingProposalDto: {
@@ -525,7 +624,7 @@ export interface components {
          * @description API key permission as `resource:action`.
          * @enum {string}
          */
-        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read";
+        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read" | "status:write";
         /** @description One recommendation session's rows, grouped together. */
         SessionGroup: {
             sessionId: string;
@@ -544,6 +643,28 @@ export interface components {
             authMode: string;
             /** @description Number of `[[auth.providers]]` already present in config. */
             providersConfigured: number;
+        };
+        /** @description The caller's operational status. */
+        StatusResponse: {
+            /**
+             * @description Backend reachability + cache freshness + backbone state (mirrors the MCP
+             *     `status` tool and the health probe).
+             */
+            health: components["schemas"]["HealthResponse"];
+            library?: null | components["schemas"]["LibraryStatus"];
+            /** @description The caller's minted Codex key state. */
+            mintedKey: components["schemas"]["MintedKeyStatus"];
+        };
+        UnresolvableEntry: {
+            /**
+             * @description Deep link to the series in Codex, where metadata matching is fixed
+             *     (PRD Principle 8: fix at the source, never patch mappings locally).
+             */
+            codexUrl?: string | null;
+            /** @description The raw `source:externalId` strings that failed to map, verbatim. */
+            rawSources: string[];
+            seriesId: string;
+            title: string;
         };
         /** @description One verdict-log row, as the UI renders it. */
         VerdictDto: {
@@ -1365,6 +1486,90 @@ export interface operations {
             };
             /** @description Setup is closed or the token is wrong */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    trigger_dump_refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

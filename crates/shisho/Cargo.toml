@@ -26,10 +26,13 @@ shisho-crypto = { workspace = true }
 shisho-db = { workspace = true }
 shisho-mangabaka = { workspace = true }
 shisho-mcp = { workspace = true }
+shisho-services = { workspace = true }
 
 base64.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tokio-cron-scheduler.workspace = true
+chrono.workspace = true
 rmcp.workspace = true
 axum.workspace = true
 anyhow.workspace = true

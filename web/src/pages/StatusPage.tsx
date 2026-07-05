@@ -146,7 +146,7 @@ function DumpPanel({ health }: { health: Status["health"] }) {
           <Badge color={mb.dumpLoaded ? "green" : "yellow"} variant="light">
             {mb.dumpLoaded ? "dump loaded" : "API-only (no dump)"}
           </Badge>
-          {mb.seriesRows !== undefined && (
+          {mb.seriesRows != null && (
             <Text size="sm" c="dimmed">
               {mb.seriesRows.toLocaleString()} series
             </Text>

@@ -50,7 +50,7 @@ export function TasteProfilePage() {
           <CurrentProfile
             content={profile.data.content}
             version={profile.data.version}
-            updatedAt={profile.data.updatedAt}
+            updatedAt={profile.data.updatedAt ?? undefined}
           />
           <VersionHistory />
         </>

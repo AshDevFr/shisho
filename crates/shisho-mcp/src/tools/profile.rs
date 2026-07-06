@@ -86,6 +86,7 @@ struct ProposalAck {
 impl McpService {
     #[tool(
         name = "get_profile",
+        annotations(read_only_hint = true),
         description = "The caller's current taste profile (Markdown) with its version. New users get a well-defined empty profile at version 0. Read this before recommending; it is the standing description of what the user likes, hates, and is allergic to. Set includeRecentFeedback to also get the outcomes recorded since the profile last changed (consolidation evidence) plus pendingReconciliation: recommended series the user has started reading without recording an outcome — ask for those outcomes and record them via record_feedback."
     )]
     async fn get_profile(
@@ -138,6 +139,9 @@ impl McpService {
 
     #[tool(
         name = "propose_profile_update",
+        // Stores a pending proposal; never mutates the live profile (approval is
+        // out-of-band), so additive rather than destructive.
+        annotations(read_only_hint = false, destructive_hint = false),
         description = "Propose an update to the taste profile (e.g. after consolidating recent feedback). Pass the full proposed Markdown content as 'diff', a one-line 'summary', and the baseVersion you read via get_profile (a stale base is rejected). The proposal is stored pending; it never becomes the current profile until the user approves it out-of-band."
     )]
     async fn propose_profile_update(

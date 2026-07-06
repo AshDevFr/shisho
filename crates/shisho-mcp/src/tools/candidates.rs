@@ -40,6 +40,7 @@ pub struct GetCandidatesParams {
 impl McpService {
     #[tool(
         name = "get_candidates",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "Generate recommendation candidates from one of two pools: 'library' (series the caller owns but has never read - the primary pool) or 'acquirable' (well-rated catalog series the caller does not own). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
     )]
     async fn get_candidates(

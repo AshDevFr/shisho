@@ -122,6 +122,8 @@ const FEEDBACK_SESSION: &str = "feedback";
 impl McpService {
     #[tool(
         name = "record_verdict",
+        // Append-only: writes, but never destroys (a retraction is a new row).
+        annotations(read_only_hint = false, destructive_hint = false),
         description = "Append one recommendation verdict to the log. Record a verdict for EVERY candidate surfaced to the user, including rejections (tier 'pass') and candidates that failed verification (retracted: true, retractionReason: 'failedVerification'). The log is append-only: to retract an earlier verdict, record a new one with retracted: true and a retractionReason — 'failedVerification' keeps the series excluded from future pools, 'withdrawn' returns it to candidacy."
     )]
     async fn record_verdict(
@@ -177,6 +179,12 @@ impl McpService {
 
     #[tool(
         name = "record_feedback",
+        // Additive and idempotent: re-recording the same outcome is a no-op.
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        ),
         description = "Record the user's reading outcome for a series ('loved', 'dropped', ...). The outcome is stored on the local verdict log (consolidation evidence) and closes any open reconciliation question on the series. A rating (1-100) is recorded as evidence; pushing it to the user's Codex library is deferred, so the ack carries pushedToCodex: false plus a codexGap to relay."
     )]
     async fn record_feedback(

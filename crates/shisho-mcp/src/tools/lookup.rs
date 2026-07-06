@@ -24,6 +24,7 @@ pub struct LookupParams {
 impl McpService {
     #[tool(
         name = "lookup",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "The full picture of one series: canonical metadata from the MangaBaka backbone (title, description, genres, rating — with its source annotated), catalog coverage (Tsundoku), the caller's own ownership/read-state/rating (Codex), and the caller's verdict history, merged into one view. Accepts an external ID in any known notation, or a title. Partial views name what is missing in 'gaps'; use this to verify candidates before recommending."
     )]
     async fn lookup(

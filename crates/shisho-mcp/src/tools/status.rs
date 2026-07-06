@@ -81,6 +81,7 @@ struct UnresolvableEntry {
 impl McpService {
     #[tool(
         name = "status",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "Service health from the caller's perspective: backend reachability, per-pool readiness, library snapshot age, series that cannot be matched to the catalog (with deep links to fix them in Codex), and housekeeping-sweep state (last runs, the caller's open reconciliation questions). Call this when data seems stale or a pool errored, and qualify recommendations accordingly."
     )]
     async fn status(

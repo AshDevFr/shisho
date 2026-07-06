@@ -67,6 +67,7 @@ struct LibrarySearchResult {
 impl McpService {
     #[tool(
         name = "list_libraries",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "The caller's Codex libraries (name, ID, series count). A Codex instance often shelves more than manga (comics, cookbooks, artbooks); call this first and, when several libraries exist, ask the user which to draw from (one, several, or all), then pass the chosen names via the 'libraries' parameter of get_candidates and search_library."
     )]
     async fn list_libraries(
@@ -98,6 +99,7 @@ impl McpService {
 
     #[tool(
         name = "search_library",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "Search the caller's own Codex library by title/author text, genre, and read state. Answers questions like 'did I read anything by this author?' or 'what fantasy series am I mid-way through?'. Pure library view: results are the caller's own series only."
     )]
     async fn search_library(

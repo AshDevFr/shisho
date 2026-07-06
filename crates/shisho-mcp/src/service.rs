@@ -337,6 +337,47 @@ mod tests {
         }
     }
 
+    /// Every tool must advertise `read_only_hint` so a client can auto-approve
+    /// the safe (read-only) tools and gate the writers. Without it a client
+    /// treats every tool alike — which surfaced as read-only tools like `lookup`
+    /// being blocked on human approval.
+    #[tokio::test]
+    async fn tools_carry_read_only_annotations() {
+        let read_only = [
+            "get_candidates",
+            "lookup",
+            "search_library",
+            "list_libraries",
+            "get_profile",
+            "status",
+        ];
+        let writes = [
+            "record_verdict",
+            "record_feedback",
+            "propose_profile_update",
+        ];
+
+        let state = test_state(Default::default()).await;
+        let service = McpService::new(state, local(Scope::all()));
+        for tool in service.tools() {
+            let hint = tool.annotations.as_ref().and_then(|a| a.read_only_hint);
+            let name = tool.name.as_ref();
+            if read_only.contains(&name) {
+                assert_eq!(hint, Some(true), "{name} should be read-only");
+            } else if writes.contains(&name) {
+                assert_eq!(hint, Some(false), "{name} should be a write");
+                // Our writers are append-only, never destructive.
+                assert_eq!(
+                    tool.annotations.as_ref().and_then(|a| a.destructive_hint),
+                    Some(false),
+                    "{name} must not be marked destructive"
+                );
+            } else {
+                panic!("tool {name} is not classified read-only or write");
+            }
+        }
+    }
+
     /// The scope set an MCP connector is granted at OAuth consent must cover
     /// every tool's required scope, or a freshly connected client cannot call
     /// the tools it was authorized for. Regression guard: the grant once

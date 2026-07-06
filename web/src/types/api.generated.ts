@@ -673,9 +673,18 @@ export interface components {
         };
         /** @description One verdict-log row, as the UI renders it. */
         VerdictDto: {
+            /**
+             * @description Deep link to the series in Codex, when the caller owns it (the snapshot
+             *     maps its identity to a Codex UUID).
+             */
+            codexUrl?: string | null;
+            /** @description Cover image URL, when the backbone has one. */
+            coverUrl?: string | null;
             createdAt: string;
             /** Format: int64 */
             id: number;
+            /** @description Deep link to the series on MangaBaka (only for MangaBaka-keyed verdicts). */
+            mangabakaUrl?: string | null;
             notes?: string | null;
             /** @description The reading outcome recorded on this row (feedback rows carry it). */
             outcome?: string | null;
@@ -691,7 +700,16 @@ export interface components {
              *     series identity, else absent.
              */
             seriesId?: string | null;
+            /** @description The series description from the MangaBaka backbone, when available. */
+            summary?: string | null;
             tier: string;
+            /**
+             * @description Series title, resolved from the MangaBaka backbone (absent when the
+             *     service is not configured or the id does not resolve).
+             */
+            title?: string | null;
+            /** @description Deep link to the series in Tsundoku, when Tsundoku's catalog knows it. */
+            tsundokuUrl?: string | null;
             verified: boolean;
         };
         /** @description One entry in the version history, with its rendered diff. */

@@ -31,6 +31,7 @@ tower-http.workspace = true
 sea-orm.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+futures-util.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

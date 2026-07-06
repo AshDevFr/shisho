@@ -1,15 +1,21 @@
 import {
   Alert,
+  Anchor,
   Badge,
   Button,
   Group,
+  Image,
   Loader,
+  NativeSelect,
   Paper,
+  SegmentedControl,
   Select,
   Stack,
+  Table,
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
@@ -19,6 +25,7 @@ import {
   type Verdict,
   type VerdictFilters,
 } from "@/api/verdicts";
+import { useUiStore } from "@/stores/ui";
 
 const TRISTATE = [
   { value: "", label: "Any" },
@@ -26,17 +33,42 @@ const TRISTATE = [
   { value: "false", label: "No" },
 ];
 
+// Structured reading outcomes; `__other__` reveals a free-text field so the
+// vocabulary stays open (the MCP record_feedback tool also writes free text).
+const OTHER = "__other__";
+const OUTCOME_OPTIONS = [
+  { value: "loved", label: "Loved" },
+  { value: "liked", label: "Liked" },
+  { value: "mixed", label: "Mixed" },
+  { value: "dropped", label: "Dropped" },
+  { value: "dnf", label: "Did not finish" },
+  { value: OTHER, label: "Other…" },
+];
+
 /// The append-only recommendation log: every verdict the recommend sessions
 /// logged, filterable by tier / verified / retracted / outcome and grouped by
 /// session. Recording an outcome appends a feedback row (the log is never
-/// mutated in place) and feeds the consolidation loop.
+/// mutated in place) and feeds the consolidation loop. Render as cards or a
+/// table; the choice persists.
 export function VerdictsPage() {
   const [filters, setFilters] = useState<VerdictFilters>({});
   const verdicts = useVerdicts(filters);
+  const view = useUiStore((s) => s.verdictsView);
+  const setView = useUiStore((s) => s.setVerdictsView);
 
   return (
     <Stack gap="xl">
-      <Title order={2}>Verdicts</Title>
+      <Group justify="space-between" align="flex-end">
+        <Title order={2}>Verdicts</Title>
+        <SegmentedControl
+          value={view}
+          onChange={(v) => setView(v as "card" | "table")}
+          data={[
+            { value: "card", label: "Cards" },
+            { value: "table", label: "Table" },
+          ]}
+        />
+      </Group>
 
       <Filters value={filters} onChange={setFilters} />
 
@@ -61,11 +93,15 @@ export function VerdictsPage() {
               {new Date(group.startedAt).toLocaleString()}
             </Text>
           </Group>
-          <Stack gap="sm">
-            {group.verdicts.map((v) => (
-              <VerdictRow key={v.id} verdict={v} />
-            ))}
-          </Stack>
+          {view === "card" ? (
+            <Stack gap="sm">
+              {group.verdicts.map((v) => (
+                <VerdictCard key={v.id} verdict={v} />
+              ))}
+            </Stack>
+          ) : (
+            <VerdictsTable verdicts={group.verdicts} />
+          )}
         </Paper>
       ))}
     </Stack>
@@ -128,61 +164,113 @@ function Filters({
   );
 }
 
-function VerdictRow({ verdict }: { verdict: Verdict }) {
+// ---- Shared bits, reused by both the card and table views ----
+
+function seriesTitle(v: Verdict): string {
+  return v.title ?? v.seriesId ?? "Unknown series";
+}
+
+function StatusBadges({ verdict }: { verdict: Verdict }) {
   return (
-    <Paper withBorder p="sm" bg={verdict.retracted ? "dark.6" : undefined}>
-      <Group justify="space-between" align="flex-start">
-        <Stack gap={4}>
-          <Group gap="xs">
-            <Badge>{verdict.tier}</Badge>
-            {verdict.verified && (
-              <Badge color="green" variant="light" size="sm">
-                verified
-              </Badge>
-            )}
-            {verdict.retracted && (
-              <Badge color="red" variant="light" size="sm">
-                retracted
-                {verdict.retractionReason && `: ${verdict.retractionReason}`}
-              </Badge>
-            )}
-            {verdict.outcome && (
-              <Badge color="grape" variant="light" size="sm">
-                outcome: {verdict.outcome}
-              </Badge>
-            )}
-          </Group>
-          {verdict.seriesId && (
-            <Text size="xs" c="dimmed">
-              {verdict.seriesId}
-            </Text>
-          )}
-          <Text size="sm">{verdict.rationale}</Text>
-          {verdict.notes && (
-            <Text size="xs" c="dimmed">
-              {verdict.notes}
-            </Text>
-          )}
-        </Stack>
-        {verdict.seriesId && !verdict.retracted && (
-          <OutcomeEditor verdict={verdict} />
-        )}
-      </Group>
-    </Paper>
+    <>
+      {verdict.verified && (
+        <Badge color="green" variant="light" size="sm">
+          verified
+        </Badge>
+      )}
+      {verdict.retracted && (
+        <Badge color="red" variant="light" size="sm">
+          retracted
+          {verdict.retractionReason && `: ${verdict.retractionReason}`}
+        </Badge>
+      )}
+      {verdict.outcome && (
+        <Badge color="grape" variant="light" size="sm">
+          outcome: {verdict.outcome}
+        </Badge>
+      )}
+    </>
   );
 }
 
-function OutcomeEditor({ verdict }: { verdict: Verdict }) {
-  const [outcome, setOutcome] = useState("");
+function LinkChips({ verdict }: { verdict: Verdict }) {
+  const links: [string, string | null | undefined][] = [
+    ["MangaBaka", verdict.mangabakaUrl],
+    ["Codex", verdict.codexUrl],
+    ["Tsundoku", verdict.tsundokuUrl],
+  ];
+  const present = links.filter(([, url]) => url);
+  if (present.length === 0) return null;
+  return (
+    <Group gap="md">
+      {present.map(([label, url]) => (
+        <Anchor key={label} href={url ?? undefined} target="_blank" size="xs">
+          {label} ↗
+        </Anchor>
+      ))}
+    </Group>
+  );
+}
+
+// The rec reason, clamped with the full text on hover (rationales run long).
+function RationaleTip({ text, lines }: { text: string; lines: number }) {
+  return (
+    <Tooltip
+      label={text}
+      multiline
+      w={380}
+      withArrow
+      events={{ hover: true, focus: true, touch: true }}
+    >
+      <Text size="sm" lineClamp={lines} style={{ cursor: "default" }}>
+        {text}
+      </Text>
+    </Tooltip>
+  );
+}
+
+// A "Summary" chip revealing the MangaBaka description on hover.
+function SummaryTip({ summary }: { summary?: string | null }) {
+  if (!summary) return null;
+  return (
+    <Tooltip
+      label={summary}
+      multiline
+      w={380}
+      withArrow
+      events={{ hover: true, focus: true, touch: true }}
+    >
+      <Badge
+        variant="outline"
+        color="gray"
+        size="sm"
+        style={{ cursor: "help" }}
+      >
+        Summary
+      </Badge>
+    </Tooltip>
+  );
+}
+
+// Status dropdown + optional reason, appended as a feedback row on Save.
+function OutcomeControl({ verdict }: { verdict: Verdict }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [custom, setCustom] = useState("");
+  const [reason, setReason] = useState("");
   const record = useRecordOutcome();
 
+  const outcome = status === OTHER ? custom.trim() : (status ?? "");
+  const canSave = outcome.length > 0;
+
   const submit = () => {
-    if (!outcome.trim()) return;
+    if (!canSave) return;
     record.mutate(
-      { id: verdict.id, outcome: outcome.trim() },
+      { id: verdict.id, outcome, notes: reason.trim() || undefined },
       {
         onSuccess: () => {
-          setOutcome("");
+          setStatus(null);
+          setCustom("");
+          setReason("");
           notifications.show({ message: "Outcome recorded." });
         },
         onError: (err) =>
@@ -192,22 +280,166 @@ function OutcomeEditor({ verdict }: { verdict: Verdict }) {
   };
 
   return (
-    <Group gap="xs" wrap="nowrap">
-      <TextInput
-        placeholder="Set outcome…"
+    <Group gap="xs" wrap="nowrap" align="flex-end">
+      <NativeSelect
+        label="Outcome"
+        data={[{ value: "", label: "Set…" }, ...OUTCOME_OPTIONS]}
+        value={status ?? ""}
+        onChange={(e) => setStatus(e.currentTarget.value || null)}
+        w={130}
         size="xs"
-        value={outcome}
-        onChange={(e) => setOutcome(e.currentTarget.value)}
         aria-label={`Set outcome for verdict ${verdict.id}`}
+      />
+      {status === OTHER && (
+        <TextInput
+          label="Custom"
+          size="xs"
+          w={110}
+          value={custom}
+          onChange={(e) => setCustom(e.currentTarget.value)}
+          aria-label={`Custom outcome for verdict ${verdict.id}`}
+        />
+      )}
+      <TextInput
+        label="Reason"
+        placeholder="optional"
+        size="xs"
+        w={140}
+        value={reason}
+        onChange={(e) => setReason(e.currentTarget.value)}
+        aria-label={`Reason for verdict ${verdict.id}`}
       />
       <Button
         size="xs"
         variant="light"
         loading={record.isPending}
+        disabled={!canSave}
         onClick={submit}
       >
         Save
       </Button>
     </Group>
+  );
+}
+
+// ---- Card view ----
+
+function VerdictCard({ verdict }: { verdict: Verdict }) {
+  return (
+    <Paper withBorder p="md" bg={verdict.retracted ? "dark.6" : undefined}>
+      <Group align="flex-start" gap="md" wrap="nowrap">
+        {verdict.coverUrl && (
+          <Image
+            src={verdict.coverUrl}
+            w={72}
+            h={102}
+            radius="sm"
+            fit="cover"
+            alt=""
+          />
+        )}
+        <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
+          <Group gap="xs" wrap="wrap" align="center">
+            <Badge>{verdict.tier}</Badge>
+            <Text fw={600} size="md">
+              {seriesTitle(verdict)}
+            </Text>
+            <SummaryTip summary={verdict.summary} />
+          </Group>
+
+          <Group gap="xs">
+            {verdict.seriesId && (
+              <Text size="xs" c="dimmed">
+                {verdict.seriesId}
+              </Text>
+            )}
+            <StatusBadges verdict={verdict} />
+          </Group>
+
+          <LinkChips verdict={verdict} />
+
+          <RationaleTip text={verdict.rationale} lines={2} />
+          {verdict.notes && (
+            <Text size="xs" c="dimmed">
+              {verdict.notes}
+            </Text>
+          )}
+
+          {!verdict.retracted && verdict.seriesId && (
+            <OutcomeControl verdict={verdict} />
+          )}
+        </Stack>
+      </Group>
+    </Paper>
+  );
+}
+
+// ---- Table view ----
+
+function VerdictsTable({ verdicts }: { verdicts: Verdict[] }) {
+  return (
+    <Table.ScrollContainer minWidth={720}>
+      <Table verticalSpacing="sm" highlightOnHover>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th w={44} />
+            <Table.Th>Series</Table.Th>
+            <Table.Th w={60}>Tier</Table.Th>
+            <Table.Th>Status</Table.Th>
+            <Table.Th>Links</Table.Th>
+            <Table.Th>Reason</Table.Th>
+            <Table.Th>Outcome</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {verdicts.map((v) => (
+            <Table.Tr key={v.id} opacity={v.retracted ? 0.6 : 1}>
+              <Table.Td>
+                {v.coverUrl && (
+                  <Image
+                    src={v.coverUrl}
+                    w={36}
+                    h={51}
+                    radius="sm"
+                    fit="cover"
+                    alt=""
+                  />
+                )}
+              </Table.Td>
+              <Table.Td>
+                <Group gap={6}>
+                  <SummaryTip summary={v.summary} />
+                  <Text fw={500} size="sm">
+                    {seriesTitle(v)}
+                  </Text>
+                </Group>
+                {v.seriesId && (
+                  <Text size="xs" c="dimmed">
+                    {v.seriesId}
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
+                <Badge>{v.tier}</Badge>
+              </Table.Td>
+              <Table.Td>
+                <Group gap={4}>
+                  <StatusBadges verdict={v} />
+                </Group>
+              </Table.Td>
+              <Table.Td>
+                <LinkChips verdict={v} />
+              </Table.Td>
+              <Table.Td maw={280}>
+                <RationaleTip text={v.rationale} lines={1} />
+              </Table.Td>
+              <Table.Td>
+                {!v.retracted && v.seriesId && <OutcomeControl verdict={v} />}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
   );
 }

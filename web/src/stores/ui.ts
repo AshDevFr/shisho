@@ -1,13 +1,21 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-// Example Zustand store. Replace with real app state; add persist middleware
-// (zustand/middleware) when you need localStorage-backed slices.
+export type VerdictsView = "card" | "table";
+
+// UI preferences persisted to localStorage (survives reloads).
 interface UiState {
-  count: number;
-  increment: () => void;
+  /// How the Verdicts page renders its rows.
+  verdictsView: VerdictsView;
+  setVerdictsView: (v: VerdictsView) => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
-  count: 0,
-  increment: () => set((s) => ({ count: s.count + 1 })),
-}));
+export const useUiStore = create<UiState>()(
+  persist(
+    (set) => ({
+      verdictsView: "card",
+      setVerdictsView: (verdictsView) => set({ verdictsView }),
+    }),
+    { name: "shisho-ui" },
+  ),
+);

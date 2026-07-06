@@ -80,6 +80,26 @@ pub struct VerdictDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
     pub created_at: String,
+    /// Series title, resolved from the MangaBaka backbone (absent when the
+    /// service is not configured or the id does not resolve).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Cover image URL, when the backbone has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_url: Option<String>,
+    /// Deep link to the series on MangaBaka (only for MangaBaka-keyed verdicts).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mangabaka_url: Option<String>,
+    /// Deep link to the series in Codex, when the caller owns it (the snapshot
+    /// maps its identity to a Codex UUID).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_url: Option<String>,
+    /// The series description from the MangaBaka backbone, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Deep link to the series in Tsundoku, when Tsundoku's catalog knows it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tsundoku_url: Option<String>,
 }
 
 /// One recommendation session's rows, grouped together.
@@ -144,7 +164,140 @@ fn to_dto(row: verdict::Model) -> VerdictDto {
         outcome: row.outcome,
         notes: row.notes,
         created_at: row.created_at.to_rfc3339(),
+        // Filled in by `enrich` when the recommendation service is configured.
+        title: None,
+        cover_url: None,
+        mangabaka_url: None,
+        codex_url: None,
+        summary: None,
+        tsundoku_url: None,
     }
+}
+
+/// The public MangaBaka series URL for a numeric id: `https://mangabaka.org/<id>`.
+fn mangabaka_public_url(id: &str) -> String {
+    format!("https://mangabaka.org/{id}")
+}
+
+/// The canonical Tsundoku join key for an external id (`<source>:<id>`), so a
+/// verdict's identity and a Tsundoku feed item's identities compare equal.
+fn canon(e: &ExternalId) -> String {
+    e.as_tsundoku()
+        .unwrap_or_else(|| format!("{}:{}", e.provider, e.id))
+}
+
+/// Enrich verdict DTOs in place with series title, summary, cover, and deep
+/// links (MangaBaka / Codex / Tsundoku). Every field is best-effort: a metadata
+/// gap, an unowned series, or an unreachable backend just leaves the
+/// corresponding field absent. Metadata lookups run concurrently.
+async fn enrich(services: &shisho_services::Services, user_sub: &str, dtos: &mut [VerdictDto]) {
+    let snapshot = services.snapshots.peek(user_sub).map(|c| c.value);
+    let codex_base = services.snapshots.codex().base_url().to_owned();
+
+    // Parse each row's series identity once; resolve their metadata together.
+    let parsed: Vec<Option<ExternalId>> = dtos
+        .iter()
+        .map(|d| {
+            d.series_id
+                .as_deref()
+                .and_then(|t| ExternalId::from_tsundoku(t).ok())
+        })
+        .collect();
+
+    let metas = futures_util::future::join_all(parsed.iter().map(|p| async {
+        match p {
+            Some(eid) => services.metadata.resolve(eid).await.ok().flatten(),
+            None => None,
+        }
+    }))
+    .await;
+
+    // Tsundoku deep links: resolve every row's identity against Tsundoku's feed
+    // in one paginated pass, mapping each known external id to its Tsundoku
+    // series id. Best-effort: a feed error just omits the links.
+    let tsundoku_ids = tsundoku_series_ids(services, &parsed).await;
+    let tsundoku_base = services.tsundoku.client().base_url().to_owned();
+
+    for ((dto, parsed), meta) in dtos.iter_mut().zip(parsed.iter()).zip(metas) {
+        if let Some(meta) = meta {
+            dto.title = Some(meta.title);
+            dto.cover_url = meta.cover_url;
+            dto.summary = meta.description;
+        }
+        if let Some(id) = dto
+            .series_id
+            .as_deref()
+            .and_then(|t| t.strip_prefix("mangabaka:"))
+        {
+            dto.mangabaka_url = Some(mangabaka_public_url(id));
+        }
+        let Some(eid) = parsed.as_ref() else { continue };
+        if let Some(snap) = snapshot.as_ref()
+            && !codex_base.is_empty()
+            && let Some(series) = snap.series.iter().find(|s| s.external_ids.contains(eid))
+        {
+            dto.codex_url = Some(format!(
+                "{}/series/{}",
+                codex_base.trim_end_matches('/'),
+                series.id
+            ));
+        }
+        if !tsundoku_base.is_empty()
+            && let Some(series_id) = tsundoku_ids.get(&canon(eid))
+        {
+            dto.tsundoku_url = Some(format!(
+                "{}/series/{}",
+                tsundoku_base.trim_end_matches('/'),
+                series_id
+            ));
+        }
+    }
+}
+
+/// Resolve the parsed series identities against Tsundoku's feed in one paginated
+/// pass, returning a map from canonical external id -> Tsundoku series id. Empty
+/// when Tsundoku is unconfigured, nothing parses, or the feed errors.
+async fn tsundoku_series_ids(
+    services: &shisho_services::Services,
+    parsed: &[Option<ExternalId>],
+) -> std::collections::HashMap<String, i32> {
+    let mut out: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+    let client = services.tsundoku.client();
+    if !client.is_configured() {
+        return out;
+    }
+    let tokens: Vec<String> = parsed
+        .iter()
+        .flatten()
+        .filter_map(|e| e.as_tsundoku())
+        .collect();
+    if tokens.is_empty() {
+        return out;
+    }
+    let mut cursor: Option<String> = None;
+    loop {
+        match client
+            .feed_filtered(cursor.as_deref(), Some(200), &tokens)
+            .await
+        {
+            Ok(page) => {
+                for item in &page.items {
+                    for eid in &item.external_ids {
+                        out.insert(canon(&eid.normalized()), item.series_id);
+                    }
+                }
+                cursor = page.next_cursor;
+                if !page.has_more || cursor.is_none() {
+                    break;
+                }
+            }
+            Err(err) => {
+                tracing::debug!(error = %err, "tsundoku feed resolution failed; tsundoku links omitted");
+                break;
+            }
+        }
+    }
+    out
 }
 
 fn matches(row: &verdict::Model, f: &VerdictFilters) -> bool {
@@ -178,23 +331,30 @@ pub async fn list_verdicts(
     Query(filters): Query<VerdictFilters>,
 ) -> Result<Json<Vec<SessionGroup>>, AppError> {
     let sub = codex_user_sub(&state, &scope).await?;
-    // Oldest-first from the repo; group preserving arrival order, then present
-    // most-recent session first.
-    let rows = verdicts::list_for_user(&state.db, &sub)
+    // Oldest-first from the repo; keep the session id + arrival time alongside
+    // each row so grouping survives the enrichment pass.
+    let rows: Vec<verdict::Model> = verdicts::list_for_user(&state.db, &sub)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+        .map_err(|e| AppError::Internal(e.into()))?
+        .into_iter()
+        .filter(|r| matches(r, &filters))
+        .collect();
+    let sessions: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
+    let createds: Vec<String> = rows.iter().map(|r| r.created_at.to_rfc3339()).collect();
+    let mut dtos: Vec<VerdictDto> = rows.into_iter().map(to_dto).collect();
 
+    // Title / cover / deep links, when the recommendation service is configured.
+    if let Some(services) = state.services.as_ref() {
+        enrich(services, &sub, &mut dtos).await;
+    }
+
+    // Group preserving first-seen session order, then present most-recent first.
     let mut order: Vec<String> = Vec::new();
     let mut groups: std::collections::HashMap<String, SessionGroup> =
         std::collections::HashMap::new();
-    for row in rows {
-        if !matches(&row, &filters) {
-            continue;
-        }
-        let created = row.created_at.to_rfc3339();
-        let session = row.session_id.clone();
+    for ((session, created), dto) in sessions.into_iter().zip(createds).zip(dtos) {
         match groups.get_mut(&session) {
-            Some(g) => g.verdicts.push(to_dto(row)),
+            Some(g) => g.verdicts.push(dto),
             None => {
                 order.push(session.clone());
                 groups.insert(
@@ -202,14 +362,13 @@ pub async fn list_verdicts(
                     SessionGroup {
                         session_id: session,
                         started_at: created,
-                        verdicts: vec![to_dto(row)],
+                        verdicts: vec![dto],
                     },
                 );
             }
         }
     }
 
-    // Most recent session first (by its first row's arrival).
     let mut out: Vec<SessionGroup> = order
         .into_iter()
         .filter_map(|s| groups.remove(&s))
@@ -281,7 +440,11 @@ pub async fn record_outcome(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok((axum::http::StatusCode::CREATED, Json(to_dto(row))))
+    let mut dto = to_dto(row);
+    if let Some(services) = state.services.as_ref() {
+        enrich(services, &sub, std::slice::from_mut(&mut dto)).await;
+    }
+    Ok((axum::http::StatusCode::CREATED, Json(dto)))
 }
 
 #[cfg(test)]
@@ -302,6 +465,14 @@ mod tests {
 
     const USER: &str = "user-alice";
     const SUB: &str = "codex-alice";
+
+    #[test]
+    fn mangabaka_public_url_is_the_org_site() {
+        assert_eq!(
+            super::mangabaka_public_url("9741"),
+            "https://mangabaka.org/9741"
+        );
+    }
 
     async fn app() -> (axum::Router, std::sync::Arc<api::AppState>) {
         let mut cfg = AppConfig::default();

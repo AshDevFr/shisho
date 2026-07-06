@@ -26,6 +26,12 @@ const oneSession = [
       {
         id: 1,
         seriesId: "mangabaka:1",
+        title: "Frieren: Beyond Journey's End",
+        summary: "An elf mage journeys after her hero party.",
+        coverUrl: "https://covers.test/frieren.jpg",
+        mangabakaUrl: "https://mangabaka.org/1",
+        codexUrl: "https://codex.test/series/abc",
+        tsundokuUrl: "https://tsundoku.test/series/55",
         tier: "S",
         rationale: "fits the profile",
         verified: true,
@@ -48,7 +54,24 @@ describe("VerdictsPage", () => {
     );
     expect(screen.getByText("session-a")).toBeInTheDocument();
     expect(screen.getByText("S")).toBeInTheDocument();
+    // The title leads; the raw id is still shown as a secondary line.
+    expect(
+      screen.getByText("Frieren: Beyond Journey's End"),
+    ).toBeInTheDocument();
     expect(screen.getByText("mangabaka:1")).toBeInTheDocument();
+    // Deep links to all three sources.
+    expect(screen.getByRole("link", { name: /MangaBaka/ })).toHaveAttribute(
+      "href",
+      "https://mangabaka.org/1",
+    );
+    expect(screen.getByRole("link", { name: /Codex/ })).toHaveAttribute(
+      "href",
+      "https://codex.test/series/abc",
+    );
+    expect(screen.getByRole("link", { name: /Tsundoku/ })).toHaveAttribute(
+      "href",
+      "https://tsundoku.test/series/55",
+    );
   });
 
   it("records an outcome and refetches", async () => {
@@ -78,6 +101,7 @@ describe("VerdictsPage", () => {
       expect(screen.getByText("fits the profile")).toBeInTheDocument(),
     );
 
+    // Pick a structured outcome, then Save.
     fireEvent.change(screen.getByLabelText("Set outcome for verdict 1"), {
       target: { value: "loved" },
     });

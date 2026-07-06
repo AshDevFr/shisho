@@ -2119,12 +2119,33 @@
           "createdAt"
         ],
         "properties": {
+          "codexUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deep link to the series in Codex, when the caller owns it (the snapshot\nmaps its identity to a Codex UUID)."
+          },
+          "coverUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cover image URL, when the backbone has one."
+          },
           "createdAt": {
             "type": "string"
           },
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "mangabakaUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deep link to the series on MangaBaka (only for MangaBaka-keyed verdicts)."
           },
           "notes": {
             "type": [
@@ -2159,8 +2180,29 @@
             ],
             "description": "Canonical `provider:id` (or `mangabaka:<id>`) when the row carries a\nseries identity, else absent."
           },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The series description from the MangaBaka backbone, when available."
+          },
           "tier": {
             "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Series title, resolved from the MangaBaka backbone (absent when the\nservice is not configured or the id does not resolve)."
+          },
+          "tsundokuUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deep link to the series in Tsundoku, when Tsundoku's catalog knows it."
           },
           "verified": {
             "type": "boolean"

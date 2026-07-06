@@ -10,6 +10,7 @@ import {
   Paper,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Table,
   Text,
@@ -94,11 +95,11 @@ export function VerdictsPage() {
             </Text>
           </Group>
           {view === "card" ? (
-            <Stack gap="sm">
+            <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="sm">
               {group.verdicts.map((v) => (
                 <VerdictCard key={v.id} verdict={v} />
               ))}
-            </Stack>
+            </SimpleGrid>
           ) : (
             <VerdictsTable verdicts={group.verdicts} />
           )}
@@ -331,8 +332,8 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
         {verdict.coverUrl && (
           <Image
             src={verdict.coverUrl}
-            w={72}
-            h={102}
+            w={120}
+            h={170}
             radius="sm"
             fit="cover"
             alt=""
@@ -344,7 +345,6 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
             <Text fw={600} size="md">
               {seriesTitle(verdict)}
             </Text>
-            <SummaryTip summary={verdict.summary} />
           </Group>
 
           <Group gap="xs">
@@ -358,7 +358,15 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
 
           <LinkChips verdict={verdict} />
 
-          <RationaleTip text={verdict.rationale} lines={2} />
+          {/* The series description, inline now that the cards are large. */}
+          {verdict.summary && (
+            <Text size="xs" c="dimmed" lineClamp={3}>
+              {verdict.summary}
+            </Text>
+          )}
+
+          {/* The recommendation reason: the substance of the verdict. */}
+          <RationaleTip text={verdict.rationale} lines={4} />
           {verdict.notes && (
             <Text size="xs" c="dimmed">
               {verdict.notes}

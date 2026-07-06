@@ -300,21 +300,16 @@ pub fn allows(scopes: &[Scope], resource: Resource, action: Action) -> bool {
     scopes.contains(&Scope { resource, action })
 }
 
-/// Expand a convenience alias (`read` / `write` / `admin`) into a granular
-/// scope set. Returns `None` for any other input (callers treat unknown names
-/// as granular scope strings).
+/// Expand a convenience alias into a granular scope set. Returns `None` for any
+/// other input (callers treat unknown names as granular scope strings, which are
+/// then validated against [`VALID_SCOPES`]).
 ///
-/// - `read`  → example read
-/// - `write` → example read/write/delete
-/// - `admin` → every scope (including `keys:manage`)
+/// `admin` (every scope, including `keys:manage`) is the only alias. Every other
+/// grant must name its scopes explicitly, so a credential never quietly receives
+/// more than was asked for. (Generic `read` / `write` aliases were removed: they
+/// mapped to the placeholder example resource and matched no real capability.)
 pub fn expand_alias(name: &str) -> Option<Vec<Scope>> {
     match name {
-        "read" => Some(vec![Scope::EXAMPLE_READ]),
-        "write" => Some(vec![
-            Scope::EXAMPLE_READ,
-            Scope::EXAMPLE_WRITE,
-            Scope::EXAMPLE_DELETE,
-        ]),
         "admin" => Some(Scope::all()),
         _ => None,
     }
@@ -447,30 +442,17 @@ mod tests {
     }
 
     #[test]
-    fn alias_read_expansion() {
-        assert_eq!(expand_alias("read").unwrap(), vec![Scope::EXAMPLE_READ]);
+    fn read_and_write_are_not_aliases() {
+        // Generic aliases were removed; these must be treated as (invalid)
+        // granular scope strings, not silently expanded.
+        assert!(expand_alias("read").is_none());
+        assert!(expand_alias("write").is_none());
     }
 
     #[test]
-    fn alias_write_includes_delete() {
-        let write = expand_alias("write").unwrap();
-        for scope in [
-            Scope::EXAMPLE_READ,
-            Scope::EXAMPLE_WRITE,
-            Scope::EXAMPLE_DELETE,
-        ] {
-            assert!(write.contains(&scope), "write must include {scope}");
-        }
-        assert!(!write.contains(&Scope::KEYS_MANAGE), "write is not admin");
-    }
-
-    #[test]
-    fn alias_admin_includes_keys_manage() {
+    fn alias_admin_is_every_scope() {
         let admin = expand_alias("admin").unwrap();
         assert!(admin.contains(&Scope::KEYS_MANAGE));
-        for scope in expand_alias("write").unwrap() {
-            assert!(admin.contains(&scope), "admin must include {scope}");
-        }
         assert_eq!(admin, Scope::all());
     }
 

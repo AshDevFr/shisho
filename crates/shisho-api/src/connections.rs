@@ -291,7 +291,8 @@ mod tests {
     #[tokio::test]
     async fn connector_scoped_token_cannot_manage_connections() {
         let (app, state) = multi_user_app().await;
-        let scopes = shisho_auth::keys::expand_alias("write").unwrap();
+        // Exactly the scopes an MCP connector is granted at OAuth consent.
+        let scopes = shisho_oauth::granted_scopes();
         let (key, _) = crate::test_util::seed_key(&state.db, "connector", &scopes, None).await;
 
         for (method, uri) in [

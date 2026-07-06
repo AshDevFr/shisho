@@ -628,13 +628,13 @@ mod tests {
         panic!("last_used was never updated");
     }
 
-    /// The keys router demands `keys:manage` regardless of method: an
-    /// `example`-scoped key (no manage) is forbidden; the full scope set passes.
+    /// The keys router demands `keys:manage` regardless of method: a non-admin
+    /// key (no manage) is forbidden; the full scope set passes.
     #[tokio::test]
     async fn keys_route_requires_keys_manage() {
         let state = test_state(Default::default()).await;
-        let example = shisho_auth::keys::expand_alias("write").unwrap();
-        let (example_key, _) = seed_key(&state.db, "w", &example, None).await;
+        let non_admin = vec![Scope::PROFILE_READ, Scope::PROFILE_WRITE];
+        let (example_key, _) = seed_key(&state.db, "w", &non_admin, None).await;
         let (admin_key, _) = seed_key(&state.db, "a", &Scope::all(), None).await;
         let app = api::router(state);
 

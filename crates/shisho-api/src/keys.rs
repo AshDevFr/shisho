@@ -163,7 +163,7 @@ fn parse_scopes(names: Option<Vec<String>>) -> Result<Vec<Scope>, AppError> {
         } else {
             let scope = name.parse::<Scope>().map_err(|_| {
                 AppError::BadRequest(format!(
-                    "unknown scope {name:?} (expected one of: {}, or an alias read/write/admin)",
+                    "unknown scope {name:?} (expected one of: {}, or the alias admin)",
                     VALID_SCOPES.join(", ")
                 ))
             })?;
@@ -347,8 +347,8 @@ mod tests {
     #[tokio::test]
     async fn non_admin_cannot_manage_keys() {
         let (app, state) = admin_app().await;
-        // An example-scoped key holds example scopes but not keys:manage.
-        let scopes = shisho_auth::keys::expand_alias("write").unwrap();
+        // A non-admin key: real scopes, but not keys:manage.
+        let scopes = vec![Scope::PROFILE_READ, Scope::PROFILE_WRITE];
         let (plaintext, _) = seed_key(&state.db, "rw", &scopes, None).await;
 
         let cases = [
@@ -404,8 +404,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_with_alias_expands_to_granular() {
+    async fn create_with_admin_alias_expands_to_every_scope() {
         let (app, _) = admin_app().await;
+        let resp = app
+            .oneshot(req(
+                "POST",
+                "/api/v1/keys",
+                ADMIN_KEY,
+                Some(serde_json::json!({"name": "super", "scopes": ["admin"]})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = json_body(resp).await;
+        let granted = body["scopes"].as_array().unwrap();
+        // The `admin` alias expands to the full scope set.
+        assert!(granted.iter().any(|s| s == "keys:manage"));
+        assert!(granted.iter().any(|s| s == "profile:write"));
+        assert_eq!(granted.len(), Scope::all().len());
+    }
+
+    #[tokio::test]
+    async fn create_with_a_removed_alias_is_rejected() {
+        let (app, _) = admin_app().await;
+        // `write` is no longer an alias and is not a granular scope string.
         let resp = app
             .oneshot(req(
                 "POST",
@@ -415,13 +437,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::CREATED);
-        let body = json_body(resp).await;
-        assert_eq!(
-            body["scopes"],
-            serde_json::json!(["example:read", "example:write", "example:delete"]),
-            "the write alias expands to the granular write set"
-        );
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

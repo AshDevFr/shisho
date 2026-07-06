@@ -337,6 +337,38 @@ mod tests {
         }
     }
 
+    /// The scope set an MCP connector is granted at OAuth consent must cover
+    /// every tool's required scope, or a freshly connected client cannot call
+    /// the tools it was authorized for. Regression guard: the grant once
+    /// defaulted to the scaffold `example:*` scopes, which matched no tool.
+    #[tokio::test]
+    async fn oauth_connector_grant_covers_every_tool() {
+        use shisho_auth::keys::{Action, Resource};
+
+        let state = test_state(Default::default()).await;
+        let service = McpService::new(state, local(Scope::all()));
+        let granted = shisho_oauth::granted_scopes();
+
+        for tool in service.tools() {
+            let required = required_scope(&tool.name)
+                .unwrap_or_else(|| panic!("tool {} declares no scope", tool.name));
+            assert!(
+                granted.contains(&required),
+                "OAuth connector grant is missing {required}, required by the {} tool",
+                tool.name
+            );
+        }
+
+        // A connector has no business minting API keys.
+        assert!(
+            !granted.contains(&Scope {
+                resource: Resource::Keys,
+                action: Action::Manage,
+            }),
+            "the connector grant must not include keys:manage"
+        );
+    }
+
     #[tokio::test]
     async fn a_wrong_scope_is_denied_before_dispatch() {
         // A key scoped only to candidates:read.

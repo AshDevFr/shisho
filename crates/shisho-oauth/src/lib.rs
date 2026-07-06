@@ -30,12 +30,29 @@ pub const ACCESS_TTL_SECS: i64 = 3600;
 /// Refresh-token lifetime (30 days). Rotated on each use.
 pub const REFRESH_TTL_SECS: i64 = 30 * 24 * 3600;
 
-/// The scope set granted to a connector at consent: the `write` alias set
-/// (read + write over the example resource). Deliberately excludes
-/// `keys:manage` — an MCP connector has no business minting API keys. The OAuth
-/// `scope` parameter could narrow this later; today consent grants the full set.
+/// The scope set granted to an MCP connector at consent: exactly what the MCP
+/// tools need to run the recommend / consolidate workflow, and nothing more.
+///
+/// This is the union of every tool's required scope (see `required_scope` in
+/// `shisho-mcp`; the `oauth_connector_grant_covers_every_tool` test there keeps
+/// the two in lockstep). It deliberately excludes:
+/// - `keys:manage` — a connector has no business minting API keys;
+/// - `status:write` — triggering a MangaBaka dump refresh is a web-console
+///   operator action, not a tool.
+///
+/// The OAuth `scope` parameter could narrow this later; today consent grants
+/// the full connector set.
 pub fn granted_scopes() -> Vec<Scope> {
-    shisho_auth::keys::expand_alias("write").expect("`write` is a known alias")
+    use shisho_auth::keys::Scope;
+    vec![
+        Scope::CANDIDATES_READ, // get_candidates
+        Scope::LOOKUP_READ,     // lookup
+        Scope::LIBRARY_READ,    // search_library, list_libraries
+        Scope::VERDICTS_WRITE,  // record_verdict, record_feedback
+        Scope::PROFILE_READ,    // get_profile, the taste-profile resource
+        Scope::PROFILE_WRITE,   // propose_profile_update
+        Scope::STATUS_READ,     // status
+    ]
 }
 
 /// The advertised `scopes_supported`, as wire strings, for the discovery

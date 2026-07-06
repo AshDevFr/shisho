@@ -1584,7 +1584,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Granular `resource:action` scopes (e.g. `example:write`). The aliases\n`read`/`write`/`admin` are also accepted and expanded. Defaults to\nread-only (`example:read`)."
+            "description": "Granular `resource:action` scopes (e.g. `verdicts:write`). The `admin`\nalias is also accepted and expands to every scope. Required: a key with\nno scopes is rejected."
           }
         }
       },
@@ -1980,9 +1980,6 @@
         "type": "string",
         "description": "API key permission as `resource:action`.",
         "enum": [
-          "example:read",
-          "example:write",
-          "example:delete",
           "keys:manage",
           "candidates:read",
           "lookup:read",

@@ -274,7 +274,7 @@ pub fn session_auth(
 /// Per-resource scope guard. Reads the [`AuthContext`] that [`require_auth`]
 /// inserted and checks `(resource, action_for(method))`. Wrapped per nested
 /// router via a closure that fixes `resource` at the boundary, e.g.
-/// `from_fn(move |req, next| require_scope(Resource::Example, req, next))`.
+/// `from_fn(move |req, next| require_scope(Resource::Verdicts, req, next))`.
 pub async fn require_scope(
     resource: Resource,
     req: Request,
@@ -421,14 +421,11 @@ mod tests {
     use shisho_auth::keys::Scope;
     use shisho_db::entities::api_keys;
 
-    /// Real router plus a probe route mounted behind the auth + `example`-scope
-    /// layers. The probe answers all three methods so per-action independence
-    /// (read/write/delete) is testable on one resource.
+    /// Real router plus a probe route mounted behind the auth + `verdicts`-scope
+    /// layers. The probe answers GET and POST so per-action independence
+    /// (read vs write) is testable on one resource.
     fn probe_app(state: Arc<AppState>) -> Router {
-        let probe = Router::new().route(
-            "/probe",
-            get(async || "ok").post(async || "ok").delete(async || "ok"),
-        );
+        let probe = Router::new().route("/probe", get(async || "ok").post(async || "ok"));
         api::router_with_protected(state, probe)
     }
 
@@ -506,7 +503,7 @@ mod tests {
         let (key, _) = seed_key(
             &state.db,
             "rw",
-            &[Scope::EXAMPLE_READ, Scope::EXAMPLE_WRITE],
+            &[Scope::VERDICTS_READ, Scope::VERDICTS_WRITE],
             None,
         )
         .await;
@@ -525,7 +522,7 @@ mod tests {
     #[tokio::test]
     async fn read_key_cannot_write_403() {
         let state = test_state(Default::default()).await;
-        let (key, _) = seed_key(&state.db, "ro", &[Scope::EXAMPLE_READ], None).await;
+        let (key, _) = seed_key(&state.db, "ro", &[Scope::VERDICTS_READ], None).await;
         let app = probe_app(state);
 
         let resp = app
@@ -544,12 +541,12 @@ mod tests {
         assert_eq!(code, "forbidden");
     }
 
-    /// Actions are independent within a resource: an `example:write` key may
-    /// write but neither read nor delete.
+    /// Actions are independent within a resource: a `verdicts:write` key may
+    /// write but not read.
     #[tokio::test]
-    async fn write_key_cannot_read_or_delete_403() {
+    async fn write_key_cannot_read_403() {
         let state = test_state(Default::default()).await;
-        let (key, _) = seed_key(&state.db, "wo", &[Scope::EXAMPLE_WRITE], None).await;
+        let (key, _) = seed_key(&state.db, "wo", &[Scope::VERDICTS_WRITE], None).await;
         let app = probe_app(state);
 
         let post = app
@@ -559,18 +556,15 @@ mod tests {
             .unwrap();
         assert_eq!(post.status(), StatusCode::OK, "write is allowed");
 
-        for method in ["GET", "DELETE"] {
-            let resp = app
-                .clone()
-                .oneshot(request(method, "/api/v1/probe", Some(&key)))
-                .await
-                .unwrap();
-            assert_eq!(
-                resp.status(),
-                StatusCode::FORBIDDEN,
-                "{method} must be forbidden for a write-only key"
-            );
-        }
+        let resp = app
+            .oneshot(request("GET", "/api/v1/probe", Some(&key)))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "read must be forbidden for a write-only key"
+        );
     }
 
     #[tokio::test]
@@ -604,7 +598,7 @@ mod tests {
     #[tokio::test]
     async fn last_used_updated_after_auth() {
         let state = test_state(Default::default()).await;
-        let (key, id) = seed_key(&state.db, "tracked", &[Scope::EXAMPLE_READ], None).await;
+        let (key, id) = seed_key(&state.db, "tracked", &[Scope::VERDICTS_READ], None).await;
         let app = probe_app(state.clone());
 
         let resp = app
@@ -634,19 +628,19 @@ mod tests {
     async fn keys_route_requires_keys_manage() {
         let state = test_state(Default::default()).await;
         let non_admin = vec![Scope::PROFILE_READ, Scope::PROFILE_WRITE];
-        let (example_key, _) = seed_key(&state.db, "w", &non_admin, None).await;
+        let (non_admin_key, _) = seed_key(&state.db, "w", &non_admin, None).await;
         let (admin_key, _) = seed_key(&state.db, "a", &Scope::all(), None).await;
         let app = api::router(state);
 
         let resp = app
             .clone()
-            .oneshot(request("GET", "/api/v1/keys", Some(&example_key)))
+            .oneshot(request("GET", "/api/v1/keys", Some(&non_admin_key)))
             .await
             .unwrap();
         assert_eq!(
             resp.status(),
             StatusCode::FORBIDDEN,
-            "example scopes lack keys:manage"
+            "non-admin scopes lack keys:manage"
         );
         let resp = app
             .oneshot(request("GET", "/api/v1/keys", Some(&admin_key)))

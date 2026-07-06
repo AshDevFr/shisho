@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn authorization_server_endpoints_are_under_public_base() {
-        let md = authorization_server("https://shisho.example.com", vec!["example:read".into()]);
+        let md = authorization_server("https://shisho.example.com", vec!["verdicts:read".into()]);
         assert_eq!(md.issuer, "https://shisho.example.com");
         assert_eq!(
             md.authorization_endpoint,

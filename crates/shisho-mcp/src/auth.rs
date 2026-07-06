@@ -160,12 +160,12 @@ mod tests {
     #[tokio::test]
     async fn stdio_env_key_resolves_db_scopes() {
         let state = test_state(Default::default()).await;
-        let (key, _) = seed_key(&state.db, "ro", &[Scope::EXAMPLE_READ], None).await;
+        let (key, _) = seed_key(&state.db, "ro", &[Scope::VERDICTS_READ], None).await;
 
         let ctx = resolve_stdio_identity_with_key(&state, Some(key))
             .await
             .unwrap();
-        assert_eq!(ctx.scopes, vec![Scope::EXAMPLE_READ]);
+        assert_eq!(ctx.scopes, vec![Scope::VERDICTS_READ]);
     }
 
     #[tokio::test]
@@ -195,14 +195,20 @@ mod tests {
 
     #[test]
     fn scopes_allow_is_set_membership() {
-        assert!(scopes_allow(&Scope::all(), Scope::EXAMPLE_WRITE));
+        assert!(scopes_allow(&Scope::all(), Scope::VERDICTS_WRITE));
         assert!(scopes_allow(
-            &[Scope::EXAMPLE_READ, Scope::EXAMPLE_WRITE],
-            Scope::EXAMPLE_READ
+            &[Scope::VERDICTS_READ, Scope::VERDICTS_WRITE],
+            Scope::VERDICTS_READ
         ));
         // No hierarchy: write does not imply read.
-        assert!(!scopes_allow(&[Scope::EXAMPLE_WRITE], Scope::EXAMPLE_READ));
-        assert!(!scopes_allow(&[Scope::EXAMPLE_READ], Scope::EXAMPLE_WRITE));
-        assert!(!scopes_allow(&[], Scope::EXAMPLE_READ));
+        assert!(!scopes_allow(
+            &[Scope::VERDICTS_WRITE],
+            Scope::VERDICTS_READ
+        ));
+        assert!(!scopes_allow(
+            &[Scope::VERDICTS_READ],
+            Scope::VERDICTS_WRITE
+        ));
+        assert!(!scopes_allow(&[], Scope::VERDICTS_READ));
     }
 }

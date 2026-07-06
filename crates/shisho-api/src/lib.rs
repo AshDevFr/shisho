@@ -151,7 +151,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     build_router(state, Router::new())
 }
 
-/// [`router`] with extra routes mounted behind the auth + `example`-scope
+/// [`router`] with extra routes mounted behind the auth + `verdicts`-scope
 /// layers. Tests use this to probe the per-resource scope middleware without a
 /// real data route.
 #[cfg(test)]
@@ -159,7 +159,7 @@ pub fn router_with_protected(state: Arc<AppState>, extra: Router<Arc<AppState>>)
     build_router(state, extra)
 }
 
-fn build_router(state: Arc<AppState>, extra_example_scoped: Router<Arc<AppState>>) -> Router {
+fn build_router(state: Arc<AppState>, extra_scoped: Router<Arc<AppState>>) -> Router {
     let docs_enabled = state.cfg.api.docs;
 
     // Public by design: health for probes, info for the login-less first-run UX
@@ -170,17 +170,16 @@ fn build_router(state: Arc<AppState>, extra_example_scoped: Router<Arc<AppState>
         .route("/info", get(info::info))
         .merge(setup::router());
 
-    // The placeholder `example` resource: any route added here is gated by
-    // `(example, <method-action>)`. The skeleton mounts nothing of its own —
-    // this is where your domain's CRUD routes go. The test probe rides this
-    // guard; the action is derived from the HTTP method.
-    let example_resource = extra_example_scoped.layer(axum::middleware::from_fn(|req, next| {
-        require_scope(Resource::Example, req, next)
+    // A scope-guard probe for the middleware tests: any route the test mounts
+    // here is gated by `(verdicts, <method-action>)`, with the action derived
+    // from the HTTP method. Production mounts nothing (an empty router).
+    let scoped_probe = extra_scoped.layer(axum::middleware::from_fn(|req, next| {
+        require_scope(Resource::Verdicts, req, next)
     }));
 
     let protected = Router::new()
         .route("/whoami", get(whoami::whoami))
-        .merge(example_resource)
+        .merge(scoped_probe)
         // keys::router() carries its own keys:manage guard.
         .nest("/keys", keys::router())
         // Connected-app (OAuth grant) management; same keys:manage guard.

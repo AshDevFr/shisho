@@ -17,17 +17,29 @@ import { type CreatedKey, useCreateApiKey } from "@/api/apiKeys";
 
 /// Scope checkboxes grouped by resource. Each value is the exact
 /// `resource:action` string the API expects, so the UI never invents a scope
-/// the server doesn't know about. Replace `example` with your own resources
-/// when you replace the placeholder domain (keep them in lockstep with the
-/// `Resource`/`Action` enums in `shisho-auth`).
+/// the server doesn't know about. Keep this in lockstep with the
+/// `Resource`/`Action` taxonomy in `shisho-auth` (the server rejects any scope
+/// not in its `VALID_SCOPES`).
 const SCOPE_GROUPS: { resource: string; actions: string[] }[] = [
-  { resource: "example", actions: ["read", "write", "delete"] },
+  { resource: "candidates", actions: ["read"] },
+  { resource: "lookup", actions: ["read"] },
+  { resource: "library", actions: ["read"] },
+  { resource: "verdicts", actions: ["read", "write"] },
+  { resource: "profile", actions: ["read", "write"] },
+  { resource: "status", actions: ["read", "write"] },
   { resource: "keys", actions: ["manage"] },
 ];
 
-/// Read-only by default, matching the API's default and the least-privilege
-/// principle behind scoped keys.
-const DEFAULT_SCOPES = ["example:read"];
+/// A read-only default (least privilege): the caller adds write scopes
+/// deliberately. The server requires at least one scope, so this is never empty.
+const DEFAULT_SCOPES = [
+  "candidates:read",
+  "lookup:read",
+  "library:read",
+  "verdicts:read",
+  "profile:read",
+  "status:read",
+];
 
 const EXPIRY_OPTIONS = [
   { value: "never", label: "Never" },
@@ -164,7 +176,7 @@ export function CreateKeyModal({ opened, onClose }: CreateKeyModalProps) {
               </Button>
               <Button
                 type="submit"
-                disabled={name.trim() === ""}
+                disabled={name.trim() === "" || scopes.length === 0}
                 loading={create.isPending}
               >
                 Create

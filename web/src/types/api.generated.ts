@@ -458,9 +458,9 @@ export interface components {
             /** @example laptop-cli */
             name: string;
             /**
-             * @description Granular `resource:action` scopes (e.g. `example:write`). The aliases
-             *     `read`/`write`/`admin` are also accepted and expanded. Defaults to
-             *     read-only (`example:read`).
+             * @description Granular `resource:action` scopes (e.g. `verdicts:write`). The `admin`
+             *     alias is also accepted and expands to every scope. Required: a key with
+             *     no scopes is rejected.
              */
             scopes?: string[] | null;
         };
@@ -624,7 +624,7 @@ export interface components {
          * @description API key permission as `resource:action`.
          * @enum {string}
          */
-        Scope: "example:read" | "example:write" | "example:delete" | "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read" | "status:write";
+        Scope: "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read" | "status:write";
         /** @description One recommendation session's rows, grouped together. */
         SessionGroup: {
             sessionId: string;

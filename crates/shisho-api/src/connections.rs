@@ -4,8 +4,9 @@
 //!
 //! Authorization mirrors key management: the router gates on `keys:manage`. A
 //! browser session carries the full scope set, so the human reaches it, while
-//! an OAuth connector's own access token (example scopes only) cannot enumerate
-//! or revoke grants it was never consented to manage.
+//! an OAuth connector's own access token (connector scopes only, no
+//! `keys:manage`) cannot enumerate or revoke grants it was never consented to
+//! manage.
 //!
 //! A connection is one *client*, not one token row: a re-authorization or an
 //! in-flight refresh can leave several live rows for the same client, so the
@@ -216,7 +217,7 @@ mod tests {
                     refresh_hash: &format!("{access}-refresh"),
                     client_id,
                     user_id: user,
-                    scopes: r#"["example:read","example:write"]"#,
+                    scopes: r#"["verdicts:read","verdicts:write"]"#,
                     access_expires_at: "2999-01-01T00:00:00+00:00",
                     refresh_expires_at: "2999-01-01T00:00:00+00:00",
                 },
@@ -260,7 +261,7 @@ mod tests {
         assert_eq!(list[0]["clientName"], "Claude");
         assert_eq!(
             list[0]["scopes"],
-            serde_json::json!(["example:read", "example:write"])
+            serde_json::json!(["verdicts:read", "verdicts:write"])
         );
         assert!(list[0].get("connectedAt").is_some());
         assert!(!list.to_string().contains("h1"));

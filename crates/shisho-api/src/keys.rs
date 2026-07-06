@@ -47,9 +47,9 @@ pub struct ApiKeyResponse {
 pub struct CreateKeyRequest {
     #[schema(example = "laptop-cli")]
     pub name: String,
-    /// Granular `resource:action` scopes (e.g. `example:write`). The aliases
-    /// `read`/`write`/`admin` are also accepted and expanded. Defaults to
-    /// read-only (`example:read`).
+    /// Granular `resource:action` scopes (e.g. `verdicts:write`). The `admin`
+    /// alias is also accepted and expands to every scope. Required: a key with
+    /// no scopes is rejected.
     #[serde(default)]
     pub scopes: Option<Vec<String>>,
     /// ISO 8601 expiry; never expires when omitted.
@@ -144,7 +144,7 @@ pub async fn create_key(
 /// de-duplicated, preserving first-seen order.
 fn parse_scopes(names: Option<Vec<String>>) -> Result<Vec<Scope>, AppError> {
     let Some(names) = names else {
-        return Ok(vec![Scope::EXAMPLE_READ]);
+        return Err(AppError::BadRequest("scopes are required".into()));
     };
     if names.is_empty() {
         return Err(AppError::BadRequest("scopes must not be empty".into()));
@@ -267,7 +267,7 @@ mod tests {
                 "POST",
                 "/api/v1/keys",
                 ADMIN_KEY,
-                Some(serde_json::json!({"name": "laptop", "scopes": ["example:read", "example:write"]})),
+                Some(serde_json::json!({"name": "laptop", "scopes": ["verdicts:read", "verdicts:write"]})),
             ))
             .await
             .unwrap();
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(body["name"], "laptop");
         assert_eq!(
             body["scopes"],
-            serde_json::json!(["example:read", "example:write"])
+            serde_json::json!(["verdicts:read", "verdicts:write"])
         );
         let plaintext = body["key"].as_str().unwrap();
         assert!(plaintext.starts_with("shisho_"));
@@ -296,7 +296,7 @@ mod tests {
     #[tokio::test]
     async fn list_keys_hides_secrets() {
         let (app, state) = admin_app().await;
-        let (plaintext, _) = seed_key(&state.db, "seeded", &[Scope::EXAMPLE_READ], None).await;
+        let (plaintext, _) = seed_key(&state.db, "seeded", &[Scope::VERDICTS_READ], None).await;
 
         let resp = app
             .oneshot(req("GET", "/api/v1/keys", ADMIN_KEY, None))
@@ -394,13 +394,13 @@ mod tests {
                 "POST",
                 "/api/v1/keys",
                 ADMIN_KEY,
-                Some(serde_json::json!({"name": "bot", "scopes": ["example:write"]})),
+                Some(serde_json::json!({"name": "bot", "scopes": ["verdicts:write"]})),
             ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
         let body = json_body(resp).await;
-        assert_eq!(body["scopes"], serde_json::json!(["example:write"]));
+        assert_eq!(body["scopes"], serde_json::json!(["verdicts:write"]));
     }
 
     #[tokio::test]
@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn omitted_scopes_default_to_read_only() {
+    async fn omitted_scopes_is_rejected() {
         let (app, _) = admin_app().await;
         let resp = app
             .oneshot(req(
@@ -452,9 +452,8 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::CREATED);
-        let body = json_body(resp).await;
-        assert_eq!(body["scopes"], serde_json::json!(["example:read"]));
+        // Scopes are required: a key never quietly receives a default grant.
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

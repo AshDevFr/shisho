@@ -107,7 +107,7 @@ mod tests {
     #[tokio::test]
     async fn skipped_when_keys_exist() {
         let db = test_db().await;
-        seed_key(&db, "existing", &[Scope::EXAMPLE_READ], None).await;
+        seed_key(&db, "existing", &[Scope::VERDICTS_READ], None).await;
 
         let cfg = AppConfig::default();
         assert!(ensure_first_run_key(&db, &cfg).await.unwrap().is_none());

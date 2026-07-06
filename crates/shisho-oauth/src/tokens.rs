@@ -112,7 +112,7 @@ mod tests {
                 refresh_hash: refresh,
                 client_id: client,
                 user_id: user,
-                scopes: r#"["example:read"]"#,
+                scopes: r#"["verdicts:read"]"#,
                 access_expires_at: "2999-01-01T00:00:00+00:00",
                 refresh_expires_at: "2999-01-01T00:00:00+00:00",
             },

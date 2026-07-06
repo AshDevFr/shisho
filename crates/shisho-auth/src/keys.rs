@@ -7,22 +7,21 @@
 //! # Scopes
 //!
 //! A scope is a non-hierarchical `(resource, action)` pair serialized as the
-//! string `"resource:action"`, e.g. `"example:write"`. Scopes persist as a
-//! JSON string array, e.g. `["example:read","example:write"]`.
+//! string `"resource:action"`, e.g. `"verdicts:write"`. Scopes persist as a
+//! JSON string array, e.g. `["verdicts:read","verdicts:write"]`.
 //!
-//! This template ships a generic vocabulary: an `example` data resource (with
-//! `read`/`write`/`delete`) demonstrating the pattern, plus a `keys` resource
-//! (with the single `manage` action) that gates API-key administration. **When
-//! you add a real domain, replace `example` with your own resources** by
-//! editing [`Resource`], [`Scope`], [`VALID_SCOPES`], and the alias map.
+//! The vocabulary is a `keys` resource (with the single `manage` action) that
+//! gates API-key administration, plus one resource per MCP domain surface
+//! (`candidates`, `lookup`, `library`, `verdicts`, `profile`, `status`). See
+//! [`Resource`], [`Scope`], and [`VALID_SCOPES`].
 //!
-//! **Actions are independent within a resource**: holding `example:write`
-//! grants neither `example:read` nor `example:delete`. There is no `>=`
-//! ordering — [`allows`] is plain set membership.
+//! **Actions are independent within a resource**: holding `verdicts:write`
+//! grants no `verdicts:read`. There is no `>=` ordering — [`allows`] is plain
+//! set membership.
 //!
-//! The `read`/`write`/`admin` names are creation-time aliases ([`expand_alias`])
-//! that expand to fixed granular sets, never stored. They are a convenience for
-//! key creation, not a stored representation.
+//! `admin` is the one creation-time alias ([`expand_alias`]); it expands to the
+//! full granular set and is never stored. Every other grant names its scopes
+//! explicitly.
 
 use std::fmt;
 use std::str::FromStr;
@@ -36,12 +35,11 @@ use rand::TryRng;
 use rand::rngs::SysRng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// A protected resource a key may be scoped to. `Example` is the template's
-/// placeholder data resource; `Keys` gates API-key administration. The
-/// remainder are the MCP domain surfaces, one per tool group.
+/// A protected resource a key may be scoped to. `Keys` gates API-key
+/// administration; the remainder are the MCP domain surfaces, one per tool
+/// group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Resource {
-    Example,
     Keys,
     /// The candidate pools (`get_candidates`).
     Candidates,
@@ -60,7 +58,6 @@ pub enum Resource {
 impl Resource {
     fn as_str(self) -> &'static str {
         match self {
-            Resource::Example => "example",
             Resource::Keys => "keys",
             Resource::Candidates => "candidates",
             Resource::Lookup => "lookup",
@@ -73,7 +70,6 @@ impl Resource {
 
     fn parse(s: &str) -> Option<Resource> {
         match s {
-            "example" => Some(Resource::Example),
             "keys" => Some(Resource::Keys),
             "candidates" => Some(Resource::Candidates),
             "lookup" => Some(Resource::Lookup),
@@ -128,9 +124,6 @@ pub struct Scope {
 /// Every valid scope string, in canonical order. The full set is also the
 /// effective grant of the `admin` alias and the single-user config key.
 pub const VALID_SCOPES: &[&str] = &[
-    "example:read",
-    "example:write",
-    "example:delete",
     "keys:manage",
     "candidates:read",
     "lookup:read",
@@ -144,18 +137,6 @@ pub const VALID_SCOPES: &[&str] = &[
 ];
 
 impl Scope {
-    pub const EXAMPLE_READ: Scope = Scope {
-        resource: Resource::Example,
-        action: Action::Read,
-    };
-    pub const EXAMPLE_WRITE: Scope = Scope {
-        resource: Resource::Example,
-        action: Action::Write,
-    };
-    pub const EXAMPLE_DELETE: Scope = Scope {
-        resource: Resource::Example,
-        action: Action::Delete,
-    };
     pub const KEYS_MANAGE: Scope = Scope {
         resource: Resource::Keys,
         action: Action::Manage,
@@ -201,9 +182,6 @@ impl Scope {
     /// superuser path.
     pub fn all() -> Vec<Scope> {
         vec![
-            Scope::EXAMPLE_READ,
-            Scope::EXAMPLE_WRITE,
-            Scope::EXAMPLE_DELETE,
             Scope::KEYS_MANAGE,
             Scope::CANDIDATES_READ,
             Scope::LOOKUP_READ,
@@ -316,7 +294,7 @@ pub fn expand_alias(name: &str) -> Option<Vec<Scope>> {
 }
 
 /// Serialize scopes to the stored JSON array format
-/// (`["example:read","example:write"]`).
+/// (`["verdicts:read","verdicts:write"]`).
 pub fn scopes_to_json(scopes: &[Scope]) -> String {
     serde_json::to_string(scopes).expect("Scope serialization is infallible")
 }
@@ -407,19 +385,19 @@ mod tests {
             assert_eq!(scope.to_string(), *s, "round-trips through Display");
         }
         assert_eq!(
-            "example:write".parse::<Scope>().unwrap(),
-            Scope::EXAMPLE_WRITE
+            "verdicts:write".parse::<Scope>().unwrap(),
+            Scope::VERDICTS_WRITE
         );
     }
 
     #[test]
     fn rejects_unknown_resource_action() {
-        assert!("example:bogus".parse::<Scope>().is_err());
+        assert!("verdicts:bogus".parse::<Scope>().is_err());
         assert!("bogus:read".parse::<Scope>().is_err());
-        assert!("examplewrite".parse::<Scope>().is_err(), "missing colon");
+        assert!("verdictswrite".parse::<Scope>().is_err(), "missing colon");
         // The error message lists the valid set so the API 400 is useful.
-        let err = "example:bogus".parse::<Scope>().unwrap_err();
-        assert!(err.to_string().contains("example:read"), "got: {err}");
+        let err = "verdicts:bogus".parse::<Scope>().unwrap_err();
+        assert!(err.to_string().contains("keys:manage"), "got: {err}");
     }
 
     #[test]
@@ -427,17 +405,16 @@ mod tests {
         assert!("keys:write".parse::<Scope>().is_err(), "keys only manage");
         assert!("keys:read".parse::<Scope>().is_err());
         assert!(
-            "example:manage".parse::<Scope>().is_err(),
+            "profile:manage".parse::<Scope>().is_err(),
             "manage is keys-only"
         );
     }
 
     #[test]
-    fn write_does_not_imply_read_or_delete() {
-        let scopes = [Scope::EXAMPLE_WRITE];
-        assert!(allows(&scopes, Resource::Example, Action::Write));
-        assert!(!allows(&scopes, Resource::Example, Action::Read));
-        assert!(!allows(&scopes, Resource::Example, Action::Delete));
+    fn write_does_not_imply_read() {
+        let scopes = [Scope::VERDICTS_WRITE];
+        assert!(allows(&scopes, Resource::Verdicts, Action::Write));
+        assert!(!allows(&scopes, Resource::Verdicts, Action::Read));
         assert!(!allows(&scopes, Resource::Keys, Action::Manage));
     }
 
@@ -458,15 +435,15 @@ mod tests {
 
     #[test]
     fn unknown_alias_is_none() {
-        assert!(expand_alias("example:write").is_none());
+        assert!(expand_alias("verdicts:write").is_none());
         assert!(expand_alias("superuser").is_none());
     }
 
     #[test]
     fn json_array_roundtrip() {
-        let scopes = vec![Scope::EXAMPLE_WRITE, Scope::EXAMPLE_READ];
+        let scopes = vec![Scope::VERDICTS_WRITE, Scope::VERDICTS_READ];
         let json = scopes_to_json(&scopes);
-        assert_eq!(json, r#"["example:write","example:read"]"#);
+        assert_eq!(json, r#"["verdicts:write","verdicts:read"]"#);
         assert_eq!(scopes_from_json(&json).unwrap(), scopes);
         assert!(scopes_from_json(r#"["entries:bogus"]"#).is_err());
     }

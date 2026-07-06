@@ -223,7 +223,7 @@ mod tests {
         use sea_orm::EntityTrait;
 
         let state = state_with(|_| {}).await;
-        let (key, key_id) = seed_key(&state.db, "tracked", &[Scope::EXAMPLE_READ], None).await;
+        let (key, key_id) = seed_key(&state.db, "tracked", &[Scope::VERDICTS_READ], None).await;
         let base = spawn_app(state.clone()).await;
         let client = http_client(&base, &key).await;
         client.list_tools(Default::default()).await.unwrap();

@@ -85,7 +85,7 @@ mod tests {
                 redirect_uri: "https://app.example/cb",
                 code_challenge: "challenge",
                 user_id: "alice",
-                scopes: r#"["example:read"]"#,
+                scopes: r#"["verdicts:read"]"#,
                 expires_at,
             },
         )

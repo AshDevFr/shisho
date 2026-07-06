@@ -547,12 +547,10 @@ fn page_shell(eyebrow: &str, body: &str) -> String {
 }
 
 /// Title and one-line description for a resource, used to render each permission
-/// as a human-readable row rather than a raw `resource:action` pair. Replace
-/// these when you replace the placeholder `example` resource with your own.
+/// as a human-readable row rather than a raw `resource:action` pair.
 fn resource_meta(resource: shisho_auth::keys::Resource) -> (&'static str, &'static str) {
     use shisho_auth::keys::Resource;
     match resource {
-        Resource::Example => ("Example data", "The application's example resource"),
         Resource::Keys => ("API keys", "Create and revoke access credentials"),
         Resource::Candidates => (
             "Recommendation candidates",

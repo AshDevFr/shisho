@@ -44,7 +44,10 @@ pub struct ConnectionResponse {
     pub scopes: Vec<Scope>,
     /// When this client was first authorized (ISO 8601, earliest live grant).
     pub connected_at: String,
-    /// Latest access-token expiry across this client's live grants (ISO 8601).
+    /// When the connection lapses if the client stops refreshing: the latest
+    /// refresh-token expiry across its live grants (ISO 8601). Not the
+    /// short-lived access-token expiry, which the client renews automatically;
+    /// the refresh token (rotated on each use) is the grant's real lifetime.
     pub expires_at: String,
 }
 
@@ -73,7 +76,8 @@ pub async fn list_connections(
     let rows = shisho_oauth::tokens::list_by_user(&state.db, &user_id).await?;
 
     // Rows arrive newest-first. Fold them into one entry per client: keep the
-    // newest row's scopes, the earliest grant time, and the latest expiry.
+    // newest row's scopes, the earliest grant time, and the latest refresh
+    // expiry (the grant's real lifetime; the access token is renewed off it).
     struct Group {
         scopes: String,
         connected_at: String,
@@ -87,8 +91,8 @@ pub async fn list_connections(
                 if row.created_at < g.connected_at {
                     g.connected_at = row.created_at;
                 }
-                if row.access_expires_at > g.expires_at {
-                    g.expires_at = row.access_expires_at;
+                if row.refresh_expires_at > g.expires_at {
+                    g.expires_at = row.refresh_expires_at;
                 }
             }
             None => {
@@ -98,7 +102,7 @@ pub async fn list_connections(
                     Group {
                         scopes: row.scopes,
                         connected_at: row.created_at,
-                        expires_at: row.access_expires_at,
+                        expires_at: row.refresh_expires_at,
                     },
                 );
             }
@@ -218,8 +222,10 @@ mod tests {
                     client_id,
                     user_id: user,
                     scopes: r#"["verdicts:read","verdicts:write"]"#,
-                    access_expires_at: "2999-01-01T00:00:00+00:00",
-                    refresh_expires_at: "2999-01-01T00:00:00+00:00",
+                    // Distinct so the response provably surfaces the refresh
+                    // expiry (the grant's lifetime), not the short access one.
+                    access_expires_at: "2026-07-06T01:00:00+00:00",
+                    refresh_expires_at: "2026-08-05T00:00:00+00:00",
                 },
             )
             .await
@@ -264,6 +270,9 @@ mod tests {
             serde_json::json!(["verdicts:read", "verdicts:write"])
         );
         assert!(list[0].get("connectedAt").is_some());
+        // "Expires" is the refresh-token lifetime (the grant), not the 1-hour
+        // access-token expiry the client renews off.
+        assert_eq!(list[0]["expiresAt"], "2026-08-05T00:00:00+00:00");
         assert!(!list.to_string().contains("h1"));
     }
 

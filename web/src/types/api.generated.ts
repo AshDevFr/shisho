@@ -448,7 +448,12 @@ export interface components {
             clientName?: string | null;
             /** @description When this client was first authorized (ISO 8601, earliest live grant). */
             connectedAt: string;
-            /** @description Latest access-token expiry across this client's live grants (ISO 8601). */
+            /**
+             * @description When the connection lapses if the client stops refreshing: the latest
+             *     refresh-token expiry across its live grants (ISO 8601). Not the
+             *     short-lived access-token expiry, which the client renews automatically;
+             *     the refresh token (rotated on each use) is the grant's real lifetime.
+             */
             expiresAt: string;
             scopes: components["schemas"]["Scope"][];
         };

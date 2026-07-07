@@ -338,12 +338,15 @@ async fn acquirable_pool(
     if !filters.libraries.is_empty() {
         return Err(CandidatesError::LibrariesNotApplicable);
     }
-    let snapshot_hit = services
+    // The acquirable pool needs the caller's owned set only (no read-state), so
+    // it uses the slim cached Codex index rather than the full library snapshot:
+    // an external id that keys into the index is owned.
+    let index_hit = services
         .snapshots
-        .get(&user.user_sub, &user.credential)
+        .external_index(&user.user_sub, &user.credential)
         .await
         .map_err(CandidatesError::Codex)?;
-    let snapshot = snapshot_hit.value;
+    let owned_index = index_hit.value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
 
     let degraded = |source| CandidatesError::TsundokuDegraded {
@@ -404,7 +407,10 @@ async fn acquirable_pool(
                 .collect();
 
             // The mandatory per-user, Codex-authoritative anti-join.
-            if snapshot.owns_any(&external_ids) {
+            if external_ids
+                .iter()
+                .any(|e| owned_index.contains_key(&canonical(e)))
+            {
                 continue;
             }
             if verdicts.excludes(&external_ids) {
@@ -431,7 +437,7 @@ async fn acquirable_pool(
         pool: Pool::Acquirable,
         candidates,
         as_of: AsOf {
-            library: Some(snapshot_hit.as_of),
+            library: Some(index_hit.as_of),
             tsundoku: tsundoku_as_of,
         },
         truncated,

@@ -103,6 +103,15 @@ async fn mount_codex_library(server: &MockServer) {
         )
         .mount(server)
         .await;
+    // The acquirable pool resolves ownership from the slim external-index; the
+    // library fixture doubles as it (the entry carries `id` + `externalIds`).
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/external-index"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("codex", "candidates_library")),
+        )
+        .mount(server)
+        .await;
 }
 
 #[tokio::test]

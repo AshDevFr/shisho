@@ -235,7 +235,20 @@ function LinkChips({ verdict }: { verdict: Verdict }) {
 }
 
 // The rec reason, clamped with the full text on hover (rationales run long).
-function RationaleTip({ text, lines }: { text: string; lines: number }) {
+// Clamped text that reveals its full content in a tooltip on hover — used for
+// both the rec reason and the series summary so a clipped line is never a
+// dead end.
+function ClampedTip({
+  text,
+  lines,
+  size = "sm",
+  dimmed = false,
+}: {
+  text: string;
+  lines: number;
+  size?: string;
+  dimmed?: boolean;
+}) {
   return (
     <Tooltip
       label={text}
@@ -244,7 +257,12 @@ function RationaleTip({ text, lines }: { text: string; lines: number }) {
       withArrow
       events={{ hover: true, focus: true, touch: true }}
     >
-      <Text size="sm" lineClamp={lines} style={{ cursor: "default" }}>
+      <Text
+        size={size}
+        c={dimmed ? "dimmed" : undefined}
+        lineClamp={lines}
+        style={{ cursor: "default" }}
+      >
         {text}
       </Text>
     </Tooltip>
@@ -381,13 +399,11 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
 
           {/* The series description, inline now that the cards are large. */}
           {verdict.summary && (
-            <Text size="xs" c="dimmed" lineClamp={3}>
-              {verdict.summary}
-            </Text>
+            <ClampedTip text={verdict.summary} lines={3} size="xs" dimmed />
           )}
 
           {/* The recommendation reason: the substance of the verdict. */}
-          <RationaleTip text={verdict.rationale} lines={4} />
+          <ClampedTip text={verdict.rationale} lines={4} />
           {verdict.notes && (
             <Text size="xs" c="dimmed">
               {verdict.notes}
@@ -460,7 +476,7 @@ function VerdictsTable({ verdicts }: { verdicts: Verdict[] }) {
                 <LinkChips verdict={v} />
               </Table.Td>
               <Table.Td maw={280}>
-                <RationaleTip text={v.rationale} lines={1} />
+                <ClampedTip text={v.rationale} lines={1} />
               </Table.Td>
               <Table.Td>
                 {!v.retracted && v.seriesId && <OutcomeControl verdict={v} />}

@@ -182,6 +182,30 @@ pub struct SeriesExternalId {
     pub external_url: Option<String>,
 }
 
+/// One entry of the slim external-index projection
+/// (`GET /api/v1/series/external-index`): a Codex series UUID and its linked
+/// external IDs, without the heavy full DTO. Purpose-built for resolving an
+/// external id (e.g. a MangaBaka id) back to its Codex series.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesExternalIndexEntry {
+    /// Codex series UUID; build the web deep link as `/series/{id}`.
+    pub id: String,
+    #[serde(default)]
+    pub external_ids: Vec<SeriesExternalId>,
+}
+
+impl SeriesExternalIndexEntry {
+    /// The entry's external IDs normalized to known providers (unknown
+    /// providers dropped), mirroring [`FullSeries::normalized_external_ids`].
+    pub fn normalized_external_ids(&self) -> Vec<ExternalId> {
+        self.external_ids
+            .iter()
+            .filter_map(|e| ExternalId::from_codex_parts(&e.source, &e.external_id).ok())
+            .collect()
+    }
+}
+
 /// The caller's rating + notes for one series (`UserSeriesRatingDto`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -345,6 +369,27 @@ impl CodexClient {
         ]);
         self.send(Self::authed(req, credential), "/api/v1/series")
             .await
+    }
+
+    /// `GET /api/v1/series/external-index` — one page of the slim external-id
+    /// projection (series UUID + linked external IDs). The lightweight way to
+    /// resolve external ids to Codex series without over-fetching the full DTO;
+    /// `page_size` is capped at 500 by Codex.
+    pub async fn list_series_external_index(
+        &self,
+        credential: &CodexCredential,
+        page: u64,
+        page_size: u64,
+    ) -> Result<Page<SeriesExternalIndexEntry>, CodexError> {
+        let req = self.get("/api/v1/series/external-index")?.query(&[
+            ("page", page.to_string()),
+            ("pageSize", page_size.to_string()),
+        ]);
+        self.send(
+            Self::authed(req, credential),
+            "/api/v1/series/external-index",
+        )
+        .await
     }
 
     /// `POST /api/v1/series/search` — title/author search over the caller's

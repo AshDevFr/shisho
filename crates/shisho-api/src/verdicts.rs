@@ -190,8 +190,11 @@ fn canon(e: &ExternalId) -> String {
 /// links (MangaBaka / Codex / Tsundoku). Every field is best-effort: a metadata
 /// gap, an unowned series, or an unreachable backend just leaves the
 /// corresponding field absent. Metadata lookups run concurrently.
-async fn enrich(services: &shisho_services::Services, user_sub: &str, dtos: &mut [VerdictDto]) {
-    let snapshot = services.snapshots.peek(user_sub).map(|c| c.value);
+async fn enrich(
+    services: &shisho_services::Services,
+    codex_index: &std::collections::HashMap<String, String>,
+    dtos: &mut [VerdictDto],
+) {
     let codex_base = services.snapshots.codex().base_url().to_owned();
 
     // Parse each row's series identity once; resolve their metadata together.
@@ -232,14 +235,13 @@ async fn enrich(services: &shisho_services::Services, user_sub: &str, dtos: &mut
             dto.mangabaka_url = Some(mangabaka_public_url(id));
         }
         let Some(eid) = parsed.as_ref() else { continue };
-        if let Some(snap) = snapshot.as_ref()
-            && !codex_base.is_empty()
-            && let Some(series) = snap.series.iter().find(|s| s.external_ids.contains(eid))
+        if !codex_base.is_empty()
+            && let Some(uuid) = codex_index.get(&canon(eid))
         {
             dto.codex_url = Some(format!(
                 "{}/series/{}",
                 codex_base.trim_end_matches('/'),
-                series.id
+                uuid
             ));
         }
         if !tsundoku_base.is_empty()
@@ -252,6 +254,58 @@ async fn enrich(services: &shisho_services::Services, user_sub: &str, dtos: &mut
             ));
         }
     }
+}
+
+/// Build a map from canonical external id -> Codex series UUID by sweeping the
+/// caller's slim external-index (`GET /series/external-index`) with their stored
+/// Codex key. This is the reliable, on-demand source for Codex deep links: the
+/// cached library snapshot may be cold on a fresh page load. Empty (so the links
+/// are simply absent) when there is no usable credential or the sweep errors.
+async fn codex_external_index(
+    state: &AppState,
+    scope: &CurrentScope,
+) -> std::collections::HashMap<String, String> {
+    let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let (Some(user_id), Some(dek), Some(identity), Some(services)) = (
+        scope.0.owner(),
+        state.dek.as_ref(),
+        state.codex_identity.as_ref(),
+        state.services.as_ref(),
+    ) else {
+        return out;
+    };
+    let ctx = match identity.resolve(&state.db, dek, &user_id).await {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            tracing::debug!(error = %err, "codex identity resolve failed; codex links omitted");
+            return out;
+        }
+    };
+    let codex = services.snapshots.codex();
+    let mut page = 1u64;
+    loop {
+        match codex
+            .list_series_external_index(&ctx.credential, page, 500)
+            .await
+        {
+            Ok(p) => {
+                for entry in &p.data {
+                    for eid in entry.normalized_external_ids() {
+                        out.insert(canon(&eid), entry.id.clone());
+                    }
+                }
+                if p.data.is_empty() || page >= p.total_pages {
+                    break;
+                }
+                page += 1;
+            }
+            Err(err) => {
+                tracing::debug!(error = %err, "codex external-index fetch failed; codex links omitted");
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// Resolve the parsed series identities against Tsundoku's feed in one paginated
@@ -345,7 +399,10 @@ pub async fn list_verdicts(
 
     // Title / cover / deep links, when the recommendation service is configured.
     if let Some(services) = state.services.as_ref() {
-        enrich(services, &sub, &mut dtos).await;
+        // Build the external-id -> Codex UUID map on demand from the caller's
+        // slim external-index, so Codex links resolve even on a cold snapshot.
+        let codex_index = codex_external_index(&state, &scope).await;
+        enrich(services, &codex_index, &mut dtos).await;
     }
 
     // Group preserving first-seen session order, then present most-recent first.
@@ -442,7 +499,8 @@ pub async fn record_outcome(
 
     let mut dto = to_dto(row);
     if let Some(services) = state.services.as_ref() {
-        enrich(services, &sub, std::slice::from_mut(&mut dto)).await;
+        let codex_index = codex_external_index(&state, &scope).await;
+        enrich(services, &codex_index, std::slice::from_mut(&mut dto)).await;
     }
     Ok((axum::http::StatusCode::CREATED, Json(dto)))
 }

@@ -256,56 +256,42 @@ async fn enrich(
     }
 }
 
-/// Build a map from canonical external id -> Codex series UUID by sweeping the
-/// caller's slim external-index (`GET /series/external-index`) with their stored
-/// Codex key. This is the reliable, on-demand source for Codex deep links: the
-/// cached library snapshot may be cold on a fresh page load. Empty (so the links
-/// are simply absent) when there is no usable credential or the sweep errors.
+/// The caller's cached Codex index (external id -> series UUID), the reliable
+/// source for Codex deep links. Delegates to the SWR-cached
+/// `snapshots.external_index`, so repeated page loads reuse one lightweight
+/// `external-index` sweep instead of re-scanning Codex each time. Empty (links
+/// absent) when there is no usable credential or the build errors.
 async fn codex_external_index(
     state: &AppState,
     scope: &CurrentScope,
-) -> std::collections::HashMap<String, String> {
-    let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+) -> Arc<shisho_services::library_snapshot::CodexIndex> {
+    let empty = || Arc::new(shisho_services::library_snapshot::CodexIndex::new());
     let (Some(user_id), Some(dek), Some(identity), Some(services)) = (
         scope.0.owner(),
         state.dek.as_ref(),
         state.codex_identity.as_ref(),
         state.services.as_ref(),
     ) else {
-        return out;
+        return empty();
     };
     let ctx = match identity.resolve(&state.db, dek, &user_id).await {
         Ok(ctx) => ctx,
         Err(err) => {
             tracing::debug!(error = %err, "codex identity resolve failed; codex links omitted");
-            return out;
+            return empty();
         }
     };
-    let codex = services.snapshots.codex();
-    let mut page = 1u64;
-    loop {
-        match codex
-            .list_series_external_index(&ctx.credential, page, 500)
-            .await
-        {
-            Ok(p) => {
-                for entry in &p.data {
-                    for eid in entry.normalized_external_ids() {
-                        out.insert(canon(&eid), entry.id.clone());
-                    }
-                }
-                if p.data.is_empty() || page >= p.total_pages {
-                    break;
-                }
-                page += 1;
-            }
-            Err(err) => {
-                tracing::debug!(error = %err, "codex external-index fetch failed; codex links omitted");
-                break;
-            }
+    match services
+        .snapshots
+        .external_index(&ctx.user_sub, &ctx.credential)
+        .await
+    {
+        Ok(cached) => cached.value,
+        Err(err) => {
+            tracing::debug!(error = %err, "codex external-index build failed; codex links omitted");
+            empty()
         }
     }
-    out
 }
 
 /// Resolve the parsed series identities against Tsundoku's feed in one paginated
@@ -402,7 +388,7 @@ pub async fn list_verdicts(
         // Build the external-id -> Codex UUID map on demand from the caller's
         // slim external-index, so Codex links resolve even on a cold snapshot.
         let codex_index = codex_external_index(&state, &scope).await;
-        enrich(services, &codex_index, &mut dtos).await;
+        enrich(services, codex_index.as_ref(), &mut dtos).await;
     }
 
     // Group preserving first-seen session order, then present most-recent first.
@@ -500,7 +486,12 @@ pub async fn record_outcome(
     let mut dto = to_dto(row);
     if let Some(services) = state.services.as_ref() {
         let codex_index = codex_external_index(&state, &scope).await;
-        enrich(services, &codex_index, std::slice::from_mut(&mut dto)).await;
+        enrich(
+            services,
+            codex_index.as_ref(),
+            std::slice::from_mut(&mut dto),
+        )
+        .await;
     }
     Ok((axum::http::StatusCode::CREATED, Json(dto)))
 }

@@ -18,7 +18,7 @@
 //! `/api/v1/events/stream` (SSE entity-change feed) and invalidate per-user
 //! entries on events.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -160,11 +160,28 @@ pub fn unmatched_selectors(snapshot: &LibrarySnapshot, selectors: &[String]) -> 
 /// trigger. Must not block: spawn any real work.
 pub type SnapshotBuildHook = Arc<dyn Fn(&str, &Arc<LibrarySnapshot>) + Send + Sync>;
 
+/// A cached local index of the caller's Codex library: canonical external id
+/// (`<source>:<id>`) -> Codex series UUID. Built from the cheap `external-index`
+/// endpoint so consumers resolve an external id (e.g. a MangaBaka id) to its
+/// Codex series without re-scanning the full library each time.
+pub type CodexIndex = HashMap<String, String>;
+
+/// `external-index` page size (Codex caps this at 500).
+const INDEX_PAGE_SIZE: u64 = 500;
+
+/// The canonical index key for an external id (`<source>:<id>`), matching how
+/// consumers look series up.
+fn index_key(id: &ExternalId) -> String {
+    id.as_tsundoku()
+        .unwrap_or_else(|| format!("{}:{}", id.provider, id.id))
+}
+
 /// The snapshot cache, keyed by `user_sub`.
 #[derive(Clone)]
 pub struct LibrarySnapshotService {
     codex: CodexClient,
     cache: SwrCache<String, Arc<LibrarySnapshot>>,
+    index_cache: SwrCache<String, Arc<CodexIndex>>,
     on_build: Option<SnapshotBuildHook>,
 }
 
@@ -173,6 +190,7 @@ impl LibrarySnapshotService {
         Self {
             codex,
             cache: SwrCache::new(cfg),
+            index_cache: SwrCache::new(cfg),
             on_build: None,
         }
     }
@@ -206,6 +224,26 @@ impl LibrarySnapshotService {
             .await
     }
 
+    /// The caller's cached Codex index (external id -> series UUID), built once
+    /// from the slim `external-index` endpoint and reused per SWR semantics, so
+    /// repeated identity resolutions (verdict links, ownership checks) don't each
+    /// re-scan Codex. Cold-build failures surface the typed Codex error.
+    pub async fn external_index(
+        &self,
+        user_sub: &str,
+        credential: &CodexCredential,
+    ) -> Result<Cached<Arc<CodexIndex>>, SwrError<CodexError>> {
+        let codex = self.codex.clone();
+        let credential = credential.clone();
+        self.index_cache
+            .get_or_load(user_sub.to_owned(), move || async move {
+                build_external_index(&codex, &credential)
+                    .await
+                    .map(Arc::new)
+            })
+            .await
+    }
+
     /// The caller's cached snapshot, if one exists — no credential, no
     /// build. The web UI's status page reads it (a UI session holds no
     /// Codex credential); an absent entry is reported, never rebuilt.
@@ -222,6 +260,29 @@ impl LibrarySnapshotService {
     /// (e.g. a live single-series rating read).
     pub fn codex(&self) -> &CodexClient {
         &self.codex
+    }
+}
+
+/// Sweep the slim `external-index` (paginated) into a canonical-id -> UUID map.
+async fn build_external_index(
+    codex: &CodexClient,
+    credential: &CodexCredential,
+) -> Result<CodexIndex, CodexError> {
+    let mut map = CodexIndex::new();
+    let mut page = 1u64;
+    loop {
+        let response = codex
+            .list_series_external_index(credential, page, INDEX_PAGE_SIZE)
+            .await?;
+        for entry in &response.data {
+            for eid in entry.normalized_external_ids() {
+                map.insert(index_key(&eid), entry.id.clone());
+            }
+        }
+        if response.data.is_empty() || page >= response.total_pages {
+            return Ok(map);
+        }
+        page += 1;
     }
 }
 

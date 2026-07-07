@@ -171,6 +171,27 @@ function seriesTitle(v: Verdict): string {
   return v.title ?? v.seriesId ?? "Unknown series";
 }
 
+// Tier -> a saturated color; `autoContrast` then picks readable (dark/light)
+// text, so the badge stays legible in both themes (a plain Badge was white
+// text on a light background in dark mode).
+const TIER_COLORS: Record<string, string> = {
+  S: "grape",
+  A: "teal",
+  B: "blue",
+  C: "yellow",
+  D: "orange",
+  pass: "gray",
+};
+
+function TierBadge({ tier }: { tier: string }) {
+  const color = TIER_COLORS[tier] ?? TIER_COLORS[tier.toUpperCase()] ?? "gray";
+  return (
+    <Badge variant="filled" color={color} autoContrast>
+      {tier}
+    </Badge>
+  );
+}
+
 function StatusBadges({ verdict }: { verdict: Verdict }) {
   return (
     <>
@@ -341,7 +362,7 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
         )}
         <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs" wrap="wrap" align="center">
-            <Badge>{verdict.tier}</Badge>
+            <TierBadge tier={verdict.tier} />
             <Text fw={600} size="md">
               {seriesTitle(verdict)}
             </Text>
@@ -428,7 +449,7 @@ function VerdictsTable({ verdicts }: { verdicts: Verdict[] }) {
                 )}
               </Table.Td>
               <Table.Td>
-                <Badge>{v.tier}</Badge>
+                <TierBadge tier={v.tier} />
               </Table.Td>
               <Table.Td>
                 <Group gap={4}>

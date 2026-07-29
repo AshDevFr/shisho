@@ -1,5 +1,5 @@
 //! API client + provider fallback tests: responses recorded from the real
-//! `api.mangabaka.dev` under `tests/fixtures/mangabaka/`, replayed through
+//! `api.mangabaka.org` under `tests/fixtures/mangabaka/`, replayed through
 //! wiremock. No live calls.
 
 use shisho_config::{MangabakaConfig, Secret};

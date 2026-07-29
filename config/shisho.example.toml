@@ -130,13 +130,13 @@ owned_prefilter = false
 [mangabaka]
 # The non-optional metadata backbone and discovery source. Needs at least one
 # source (dump URL or API key); otherwise boot validation fails.
-api_base_url = "https://api.mangabaka.dev"
-# API key for api.mangabaka.dev. Required when api_fallback = true. Source from
+api_base_url = "https://api.mangabaka.org"
+# API key for api.mangabaka.org. Required when api_fallback = true. Source from
 # SHISHO_MANGABAKA__API_KEY or a .local overlay.
 # api_key = "env is preferred"
 # Published dump. Set to "" to force API-only mode (degraded: no local
 # resolution, no FTS title search).
-offline_dump_url = "https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz"
+offline_dump_url = "https://api.mangabaka.org/v1/database/series.sqlite.tar.gz"
 # Wholesale dump refresh cron (seconds-first form). Empty = manual only
 # (`shisho mangabaka refresh`).
 offline_refresh_cron = "0 0 4 * * Mon"

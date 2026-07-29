@@ -1,4 +1,4 @@
-//! MangaBaka HTTP client (`api.mangabaka.dev`, `x-api-key` header).
+//! MangaBaka HTTP client (`api.mangabaka.org`, `x-api-key` header).
 //!
 //! Internal to this crate: callers go through [`crate::MangabakaProvider`].
 //! The client only knows about MangaBaka's URL shape and JSON envelope; the

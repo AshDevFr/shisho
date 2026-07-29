@@ -105,8 +105,8 @@ mod tests {
     #[test]
     fn sidecar_url_appends_sha1() {
         assert_eq!(
-            sha1_sidecar_url("https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz"),
-            "https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz.sha1"
+            sha1_sidecar_url("https://api.mangabaka.org/v1/database/series.sqlite.tar.gz"),
+            "https://api.mangabaka.org/v1/database/series.sqlite.tar.gz.sha1"
         );
     }
 }

@@ -434,7 +434,7 @@ pub struct TsundokuConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MangabakaConfig {
-    /// API key for `api.mangabaka.dev`. Source from the environment
+    /// API key for `api.mangabaka.org`. Source from the environment
     /// (`SHISHO_MANGABAKA__API_KEY`) or a `.local` overlay. Required when
     /// `api_fallback = true`.
     pub api_key: Secret,
@@ -462,9 +462,9 @@ impl Default for MangabakaConfig {
     fn default() -> Self {
         Self {
             api_key: Secret::default(),
-            api_base_url: "https://api.mangabaka.dev".into(),
+            api_base_url: "https://api.mangabaka.org".into(),
             offline_dump_url: Some(
-                "https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz".into(),
+                "https://api.mangabaka.org/v1/database/series.sqlite.tar.gz".into(),
             ),
             offline_refresh_cron: Some("0 0 4 * * Mon".into()),
             // One day past the weekly cron cadence, so a healthy schedule
@@ -971,10 +971,10 @@ mod tests {
         assert!(!cfg.tsundoku.owned_prefilter);
         assert_eq!(cfg.cache.library_snapshot_ttl_secs, 900);
         assert_eq!(cfg.cache.tsundoku_ttl_secs, 300);
-        assert_eq!(cfg.mangabaka.api_base_url, "https://api.mangabaka.dev");
+        assert_eq!(cfg.mangabaka.api_base_url, "https://api.mangabaka.org");
         assert_eq!(
             cfg.mangabaka.dump_url(),
-            Some("https://api.mangabaka.dev/v1/database/series.sqlite.tar.gz")
+            Some("https://api.mangabaka.org/v1/database/series.sqlite.tar.gz")
         );
         assert_eq!(cfg.mangabaka.refresh_cron(), Some("0 0 4 * * Mon"));
         assert_eq!(cfg.sweeps.reconcile_cron, "0 0 6 * * Mon");

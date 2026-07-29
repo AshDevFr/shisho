@@ -92,7 +92,7 @@ async fn open_keyed(url: &str, dek: &Dek) -> anyhow::Result<DatabaseConnection> 
     let hex = dek.to_sqlcipher_hex();
     let opts = SqliteConnectOptions::from_str(url)
         .with_context(|| format!("parsing sqlite url {url}"))?
-        .pragma("key", format!("\"x'{}'\"", &*hex));
+        .pragma("key", format!("\"x'{}'\"", *hex));
     // One connection: per-connection pragmas (foreign_keys, key) then hold for
     // every query, and a single writer is all SQLite supports anyway.
     let pool = SqlitePoolOptions::new()

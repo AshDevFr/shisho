@@ -152,9 +152,9 @@
   "total": 2,
   "totalPages": 1,
   "links": {
-    "self": "/api/v1/series?full=true&page=1&pageSize=50",
-    "first": "/api/v1/series?full=true&page=1&pageSize=50",
-    "last": "/api/v1/series?full=true&page=1&pageSize=50",
+    "self": "/api/v1/series/full?page=1&pageSize=50",
+    "first": "/api/v1/series/full?page=1&pageSize=50",
+    "last": "/api/v1/series/full?page=1&pageSize=50",
     "next": null,
     "prev": null
   }

@@ -100,8 +100,8 @@ pub struct Page<T> {
     pub total_pages: u64,
 }
 
-/// Compact series row (`SeriesDto`) — search results and detail without
-/// `full=true`.
+/// Compact series row (`SeriesDto`) — what `POST /api/v1/series/search`
+/// returns, without the full row's metadata, genres, tags and external IDs.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Series {
@@ -115,9 +115,9 @@ pub struct Series {
     pub summary: Option<String>,
 }
 
-/// Full series row (`FullSeriesResponse`, `full=true`): unread counts and
-/// external IDs in one paginated call — the load-bearing query for both
-/// candidate pools.
+/// Full series row (`FullSeriesResponse`, `GET /api/v1/series/full`): unread
+/// counts and external IDs in one paginated call — the load-bearing query for
+/// both candidate pools.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FullSeries {
@@ -353,7 +353,7 @@ impl CodexClient {
         Ok(list.data)
     }
 
-    /// `GET /api/v1/series?full=true` — one page of the caller's library
+    /// `GET /api/v1/series/full` — one page of the caller's library
     /// with unread counts and external IDs inline. Pages are
     /// 1-indexed; `page_size` is capped at 100 by Codex.
     pub async fn list_series(
@@ -362,12 +362,11 @@ impl CodexClient {
         page: u64,
         page_size: u64,
     ) -> Result<Page<FullSeries>, CodexError> {
-        let req = self.get("/api/v1/series")?.query(&[
-            ("full", "true".to_owned()),
+        let req = self.get("/api/v1/series/full")?.query(&[
             ("page", page.to_string()),
             ("pageSize", page_size.to_string()),
         ]);
-        self.send(Self::authed(req, credential), "/api/v1/series")
+        self.send(Self::authed(req, credential), "/api/v1/series/full")
             .await
     }
 
@@ -409,15 +408,15 @@ impl CodexClient {
         Ok(page.data)
     }
 
-    /// `GET /api/v1/series/{id}?full=true` — one series with metadata and
+    /// `GET /api/v1/series/{id}/full` — one series with metadata and
     /// external IDs.
     pub async fn series_detail(
         &self,
         credential: &CodexCredential,
         series_id: &str,
     ) -> Result<FullSeries, CodexError> {
-        let endpoint = format!("/api/v1/series/{series_id}");
-        let req = self.get(&endpoint)?.query(&[("full", "true")]);
+        let endpoint = format!("/api/v1/series/{series_id}/full");
+        let req = self.get(&endpoint)?;
         self.send(Self::authed(req, credential), &endpoint).await
     }
 

@@ -48,13 +48,13 @@ async fn mount_codex(server: &MockServer) {
         .mount(server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/series"))
+        .and(path("/api/v1/series/full"))
         .and(query_param("page", "1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(fixture("snapshot_page1")))
         .mount(server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/series"))
+        .and(path("/api/v1/series/full"))
         .and(query_param("page", "2"))
         .respond_with(ResponseTemplate::new(200).set_body_json(fixture("snapshot_page2")))
         .mount(server)

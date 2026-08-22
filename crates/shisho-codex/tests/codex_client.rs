@@ -109,8 +109,7 @@ async fn list_series_carries_unread_counts_and_external_ids_in_one_call() {
     // The load-bearing combined query for both candidate pools.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/series"))
-        .and(query_param("full", "true"))
+        .and(path("/api/v1/series/full"))
         .and(query_param("page", "1"))
         .and(query_param("pageSize", "50"))
         .and(header("X-API-Key", "test-key"))

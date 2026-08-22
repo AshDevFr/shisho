@@ -97,7 +97,7 @@ async fn mount_codex_library(server: &MockServer) {
         .mount(server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/series"))
+        .and(path("/api/v1/series/full"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(fixture("codex", "candidates_library")),
         )

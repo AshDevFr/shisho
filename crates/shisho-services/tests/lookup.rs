@@ -398,3 +398,41 @@ async fn title_search_falls_back_to_the_dump_fts_without_tsundoku() {
     assert_eq!(m.title, "Chainsaw Man");
     assert_eq!(m.source, "mangabaka-dump");
 }
+
+#[tokio::test]
+async fn a_failed_live_rating_keeps_ownership_from_the_snapshot() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ratings": [{ "id": "r-1", "seriesId": "lib-a", "rating": 88, "notes": null }]
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("codex", "candidates_library")),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/lib-a/rating"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&codex)
+        .await;
+    mount_tsundoku_frieren(&tsundoku).await;
+    let services = services(&codex, &tsundoku, fresh_db().await);
+
+    let view = lookup(&services, &user(), "mal:126287")
+        .await
+        .expect("lookup");
+
+    let c = view
+        .codex
+        .as_ref()
+        .expect("ownership survives a rating failure");
+    assert_eq!(c.series_id, "lib-a");
+    assert_eq!(c.rating, Some(88), "falls back to the snapshot rating");
+}

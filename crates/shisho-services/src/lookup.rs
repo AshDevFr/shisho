@@ -477,13 +477,20 @@ async fn codex_view(
     };
 
     // Rating/notes are cheap and single-series: fetch live rather than
-    // serving snapshot-aged values.
-    let rating = services
+    // serving snapshot-aged values. A failed fetch falls back to the
+    // snapshot's copy instead of discarding ownership and read state.
+    let (rating, notes) = match services
         .snapshots
         .codex()
         .series_rating(&user.credential, &series.id)
         .await
-        .map_err(|e| format!("codex: {e}"))?;
+    {
+        Ok(live) => (live.as_ref().map(|r| r.rating), live.and_then(|r| r.notes)),
+        Err(e) => {
+            tracing::warn!(series = %series.id, error = %e, "live rating fetch failed; using snapshot");
+            (series.rating, series.rating_notes.clone())
+        }
+    };
 
     Ok(Some((
         CodexView {
@@ -492,8 +499,8 @@ async fn codex_view(
             read_state: series.read_state,
             book_count: series.book_count,
             unread_count: series.unread_count,
-            rating: rating.as_ref().map(|r| r.rating),
-            notes: rating.and_then(|r| r.notes),
+            rating,
+            notes,
             as_of: snapshot_hit.as_of,
         },
         series.external_ids.clone(),

@@ -68,6 +68,7 @@ impl McpService {
             limit: params.limit,
             offset: params.offset,
             allow_explicit: params.allow_explicit,
+            ..Default::default()
         };
         match candidates::get_candidates(services, &user, params.pool, &filters).await {
             Ok(set) => tool_json(&set),

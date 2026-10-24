@@ -28,6 +28,7 @@ use crate::affinity::{
     Anchor, OutcomeSignal, Score, TasteVector, by_mangabaka_id, franchise_adjustment,
 };
 use crate::library_snapshot::{self, CodexIndex, SnapshotSeries};
+use crate::profile_filters::ProfileFilters;
 use crate::read_state::ReadState;
 use crate::tsundoku_cache::Resolved;
 use crate::verdicts::Outcome;
@@ -130,6 +131,9 @@ pub struct Filters {
     pub offset: Option<usize>,
     /// Include series MangaBaka rates pornographic (excluded by default).
     pub allow_explicit: bool,
+    /// The caller's profile filters; loaded server-side, never caller input.
+    #[serde(skip)]
+    pub profile: ProfileFilters,
 }
 
 impl Filters {
@@ -137,11 +141,17 @@ impl Filters {
         self.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
     }
 
-    /// The default content gate: pornographic series stay out unless the
-    /// caller opted in. An unknown rating passes.
+    /// The hard gates: pornographic series stay out unless the caller opted
+    /// in (an unknown rating passes), and so does any series carrying a genre
+    /// or tag the caller's profile blocks.
     fn gates_out(&self, candidate: &Candidate) -> bool {
-        !self.allow_explicit
-            && candidate.content_rating.as_deref() == Some(ContentRating::Pornographic.as_str())
+        let explicit = !self.allow_explicit
+            && candidate.content_rating.as_deref() == Some(ContentRating::Pornographic.as_str());
+        explicit
+            || self
+                .profile
+                .blocks(&candidate.genres, &candidate.tags)
+                .is_some()
     }
 
     fn matches(&self, genres: &[String], tags: &[String], status: Option<&str>) -> bool {
@@ -289,6 +299,12 @@ pub async fn get_candidates(
     pool: Pool,
     filters: &Filters,
 ) -> Result<CandidateSet, CandidatesError> {
+    // The profile's hard filters apply to every pool.
+    let profile = shisho_db::repos::profiles::get_or_default(&services.db, &user.user_sub).await?;
+    let filters = &Filters {
+        profile: ProfileFilters::parse(&profile.content),
+        ..filters.clone()
+    };
     match pool {
         Pool::Library => library_pool(services, user, filters).await,
         Pool::Acquirable => acquirable_pool(services, user, filters).await,

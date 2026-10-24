@@ -28,7 +28,15 @@ dislike, and are allergic to; it must stay short, current, and evidenced.
      actual outcomes.
 4. Draft the updated profile as full Markdown. Keep the structure:
    loves / likes / dislikes / hard allergens / soft red flags, each entry
-   with a short evidence note.
+   with a short evidence note. Keep the `shisho-filters` block, which
+   Shisho enforces: any series carrying a genre or tag on its `never`
+   line is removed from every candidate pool. Add a hard allergen there
+   only when it is an exact genre or tag name and the evidence is clear;
+   create the block if the profile has none:
+
+   ```shisho-filters
+   never: Gore, Harem
+   ```
 5. Submit it via `propose_profile_update` with the full proposed content
    as `diff`, a one-line `summary` of what changed and why, and the
    `baseVersion` you read in step 1 (a stale base is rejected — re-read
@@ -39,7 +47,8 @@ dislike, and are allergic to; it must stay short, current, and evidenced.
 
 ## Hard rules
 
-- Never delete an allergen without explicit user confirmation.
+- Never delete an allergen, or remove a term from the `never` line,
+  without explicit user confirmation.
 - Every change needs evidence from actual outcomes, not vibes.
 - If the evidence is too thin to justify a change, say so and stop;
   an unnecessary proposal is noise.

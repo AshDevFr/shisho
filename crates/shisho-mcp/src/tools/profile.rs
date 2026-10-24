@@ -15,6 +15,7 @@ use shisho_api::middleware::AuthContext;
 use shisho_db::repos::profiles::{self, PendingProposal, ProfileError, ProfileView};
 use shisho_db::repos::verdicts::verdict_series_token;
 use shisho_db::repos::{reconciliation, verdicts};
+use shisho_services::profile_filters::ProfileFilters;
 
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", default)]
@@ -53,6 +54,10 @@ struct ReconciliationView {
 struct ProfileResponse {
     #[serde(flatten)]
     profile: ProfileView,
+    /// Genres and tags the profile's `shisho-filters` block blocks. Shisho
+    /// removes any series carrying one from every candidate pool.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    never: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     recent_feedback: Option<Vec<FeedbackView>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -88,7 +93,7 @@ impl McpService {
     #[tool(
         name = "get_profile",
         annotations(read_only_hint = true),
-        description = "The caller's current taste profile (Markdown) with its version. New users get a well-defined empty profile at version 0. Read this before recommending; it is the standing description of what the user likes, hates, and is allergic to. Set includeRecentFeedback to also get the outcomes recorded since the profile last changed (consolidation evidence) plus pendingReconciliation: recommended series the user has started reading without recording an outcome — ask for those outcomes and record them via record_feedback."
+        description = "The caller's current taste profile (Markdown) with its version. New users get a well-defined empty profile at version 0. Read this before recommending; it is the standing description of what the user likes, hates, and is allergic to. 'never' lists the genres/tags its shisho-filters block blocks; Shisho already removes series carrying them from every pool. Set includeRecentFeedback to also get the outcomes recorded since the profile last changed (consolidation evidence) plus pendingReconciliation: recommended series the user has started reading without recording an outcome — ask for those outcomes and record them via record_feedback."
     )]
     async fn get_profile(
         &self,
@@ -132,6 +137,7 @@ impl McpService {
         };
 
         tool_json(&ProfileResponse {
+            never: ProfileFilters::parse(&profile.content).never,
             profile,
             recent_feedback,
             pending_reconciliation,

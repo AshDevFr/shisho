@@ -23,6 +23,8 @@ ranking, metadata); you are the judgment layer. Work the loop end to end.
    `score` is that order, and `because` names the user's series each
    candidate resembles, with their rating and the shared genres/tags. Start
    from the top. If too few survive, page with `offset`.
+   Series carrying a genre or tag on the profile's `never` list (its
+   `shisho-filters` block) are already removed; screen the rest.
 4. **Verify the finalists, not the whole list.** Take roughly twice the
    number of recommendations you will make from the top of the list and
    check each against the profile's hard allergens (instant disqualifiers)

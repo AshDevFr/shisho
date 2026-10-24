@@ -1355,3 +1355,47 @@ async fn outcome_recorded_for_an_unowned_series_steers_the_backlog() {
     assert_eq!(anchor.title, "Sousou no Frieren");
     assert_eq!(anchor.your_outcome.as_deref(), Some("loved"));
 }
+
+async fn set_profile(db: &DatabaseConnection, content: &str) {
+    shisho_db::repos::profiles::edit_direct(db, "user-1", content, "test", None)
+        .await
+        .expect("seed profile");
+}
+
+#[tokio::test]
+async fn profile_filter_drops_blocked_genres_from_the_library_pool() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_fantasy_reader(&codex, &tsundoku, 0).await;
+    let db = fresh_db().await;
+    set_profile(
+        &db,
+        "Loves fantasy.\n\n```shisho-filters\nnever: horror\n```\n",
+    )
+    .await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, db),
+        &user(),
+        Pool::Library,
+        &Filters::default(),
+    )
+    .await
+    .unwrap();
+    let titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(titles, vec!["Unread Fantasy"]);
+}
+
+#[tokio::test]
+async fn profile_filter_drops_blocked_tags_from_discover() {
+    let (_c, _t, services) = discover_services(&[]).await;
+    set_profile(&services.db, "```shisho-filters\nnever: Elves\n```").await;
+    let set = get_candidates(&services, &user(), Pool::Discover, &Filters::default())
+        .await
+        .unwrap();
+    assert!(
+        set.candidates.iter().all(|c| !c.title.contains("Frieren")),
+        "Elves-tagged series are blocked: {:?}",
+        set.candidates.iter().map(|c| &c.title).collect::<Vec<_>>()
+    );
+}

@@ -32,7 +32,8 @@ pub async fn run(
         println!("library saved to {}", path.display());
     }
 
-    let rankers: Vec<Box<dyn Ranker>> = vec![Box::new(SnapshotOrder), Box::new(AffinityRanker)];
+    let rankers: Vec<Box<dyn Ranker>> =
+        vec![Box::new(SnapshotOrder), Box::new(AffinityRanker::default())];
     let reports: Vec<EvalReport> = rankers
         .iter()
         .filter_map(|ranker| eval::evaluate(&snapshot, ranker.as_ref()))

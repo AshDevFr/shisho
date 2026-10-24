@@ -64,6 +64,8 @@ const MMR_LAMBDA: f64 = 0.7;
 /// Descriptions ship trimmed to about this many characters; `lookup` has the
 /// full text.
 const DESCRIPTION_CHARS: usize = 280;
+/// Anchors shipped per candidate.
+const MAX_BECAUSE: usize = 3;
 /// Tags shipped per candidate.
 const MAX_TAGS: usize = 8;
 /// Discover pool: comic formats in scope (novels are out).
@@ -366,8 +368,10 @@ async fn library_pool(
     let mut ranked: Vec<(&SnapshotSeries, Option<Score>)> = eligible
         .into_iter()
         .map(|s| {
-            let mut score = (!taste.is_empty())
-                .then(|| taste.score_with_authors(&s.genres, &s.tags, &s.authors));
+            let mut score = (!taste.is_empty()).then(|| Score {
+                affinity: taste.affinity(&s.genres, &s.tags, &s.authors),
+                anchors: Vec::new(),
+            });
             if let Some(series_links) =
                 mangabaka_id(s.external_ids.iter()).and_then(|id| links.get(&id))
             {
@@ -438,6 +442,7 @@ async fn library_pool(
         // Coverage is an acquisition concern; the caller already owns these.
         candidate.volume_coverage.clear();
         candidate.chapter_coverage.clear();
+        explain(candidate, &taste);
         compact(candidate, Some(&taste));
     }
 
@@ -551,11 +556,10 @@ async fn acquirable_pool(
     let mut scored: Vec<(f64, Candidate)> = pool
         .into_iter()
         .map(|mut candidate| {
-            let mut score = Some(taste.score_with_authors(
-                &candidate.genres,
-                &candidate.tags,
-                &candidate.authors,
-            ));
+            let mut score = Some(Score {
+                affinity: taste.affinity(&candidate.genres, &candidate.tags, &candidate.authors),
+                anchors: Vec::new(),
+            });
             if let Some(series_links) = candidate.mangabaka_id.and_then(|id| links.get(&id)) {
                 apply_franchise(&mut score, series_links, &library);
             }
@@ -589,6 +593,7 @@ async fn acquirable_pool(
         tracing::warn!(error = %err, "coverage attach failed; acquirable candidates ship without spans");
     }
     for candidate in &mut candidates {
+        explain(candidate, &taste);
         compact(candidate, Some(&taste));
     }
 
@@ -738,8 +743,10 @@ async fn discover_pool(
         {
             continue;
         }
-        let mut score =
-            Some(taste.score_with_authors(&candidate.genres, &candidate.tags, &candidate.authors));
+        let mut score = Some(Score {
+            affinity: taste.affinity(&candidate.genres, &candidate.tags, &candidate.authors),
+            anchors: Vec::new(),
+        });
         if let Some(series_links) = links.get(&meta.mangabaka_id) {
             apply_franchise(&mut score, series_links, &library);
         }
@@ -790,6 +797,7 @@ async fn discover_pool(
         }
     }
     for candidate in &mut candidates {
+        explain(candidate, &taste);
         compact(candidate, Some(&taste));
     }
 
@@ -805,8 +813,8 @@ async fn discover_pool(
 }
 
 /// The caller's taste: their ratings and finished series, their recorded
-/// reading outcomes, and term specificity from the dump when one is loaded
-/// (rare shared tags count for more than ubiquitous ones).
+/// reading outcomes, and term specificity within their own library (rare
+/// shared tags count for more than ubiquitous ones).
 async fn taste_for(
     services: &Services,
     user_sub: &str,
@@ -817,18 +825,7 @@ async fn taste_for(
     if taste.is_empty() {
         return taste;
     }
-    match services
-        .metadata
-        .provider()
-        .term_specificity(&taste.term_keys())
-        .await
-    {
-        Ok(Some((counts, corpus))) => taste.apply_specificity(&counts, corpus),
-        Ok(None) => {}
-        Err(err) => {
-            tracing::debug!(error = %err, "term specificity lookup failed; unweighted taste")
-        }
-    }
+    taste.apply_library_specificity(snapshot);
     taste
 }
 
@@ -1240,6 +1237,18 @@ fn union_strings(a: &[String], b: &[String]) -> Vec<String> {
 /// Whether the catalog has items beyond `page`.
 fn page_has_more(page: u32, total: i64) -> bool {
     (i64::from(page) + 1) * i64::from(CATALOG_PAGE_SIZE) < total
+}
+
+/// Attach the taste anchors explaining a returned candidate, after any
+/// franchise anchor ranking already put first. Ranking itself only needs the
+/// affinity; anchors are built for the page alone.
+fn explain(candidate: &mut Candidate, taste: &TasteVector) {
+    for anchor in taste.explain(&candidate.genres, &candidate.tags, &candidate.authors) {
+        if !candidate.because.iter().any(|a| a.title == anchor.title) {
+            candidate.because.push(anchor);
+        }
+    }
+    candidate.because.truncate(MAX_BECAUSE);
 }
 
 /// Trim a candidate to what ranking and verification need: a short

@@ -27,6 +27,8 @@ const NEUTRAL_RATING: f64 = 60.0;
 const MEAN_SHRINKAGE: f64 = 2.0;
 /// Rating points per unit of contribution.
 const RATING_SPREAD: f64 = 25.0;
+/// Floor on the rating spread used for the neutral point.
+const MIN_RATING_SD: f64 = 8.0;
 /// Contribution of a completed series the caller did not rate.
 const COMPLETED_UNRATED: f64 = 0.3;
 /// Tags are noisier than genres.
@@ -75,8 +77,41 @@ struct Source {
     outcome: Option<Outcome>,
     weight: f64,
     /// Lowercased genre and tag keys.
-    terms: Vec<String>,
+    terms: std::collections::HashSet<String>,
     authors: Vec<String>,
+}
+
+/// The knobs of the taste fold, so `shisho eval` can compare settings. The
+/// defaults are what the candidate pools use.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TasteParams {
+    /// A rating's contribution is measured from this point on the 1-100
+    /// scale; `None` uses the caller's own scale (see [`rating_origin`]).
+    pub rating_origin: Option<f64>,
+    /// Rating points per unit of contribution.
+    pub rating_spread: f64,
+    /// Contribution of a completed, unrated series.
+    pub completed_unrated: f64,
+    /// Contribution of an unrated series the caller is reading.
+    pub in_progress: f64,
+    /// Weight of a tag relative to a genre.
+    pub tag_factor: f64,
+    /// A candidate's summed term weights are divided by its term count to
+    /// this power (0.5: long tag lists help, but sub-linearly).
+    pub length_norm: f64,
+}
+
+impl Default for TasteParams {
+    fn default() -> Self {
+        Self {
+            rating_origin: None,
+            rating_spread: RATING_SPREAD,
+            completed_unrated: COMPLETED_UNRATED,
+            in_progress: 0.0,
+            tag_factor: TAG_FACTOR,
+            length_norm: 0.5,
+        }
+    }
 }
 
 /// The caller's taste, folded from their library.
@@ -85,6 +120,8 @@ pub struct TasteVector {
     /// Lowercased term -> weight.
     terms: HashMap<String, f64>,
     sources: Vec<Source>,
+    tag_factor: f64,
+    length_norm: f64,
 }
 
 /// A reading outcome the caller recorded, with the series' metadata, as
@@ -121,26 +158,36 @@ impl TasteVector {
     /// series they rated speaks through its rating; an outcome on it is
     /// ignored.
     pub fn from_library(snapshot: &LibrarySnapshot, outcomes: &[OutcomeSignal]) -> Self {
+        Self::from_library_with(snapshot, outcomes, &TasteParams::default())
+    }
+
+    /// [`Self::from_library`] with explicit [`TasteParams`].
+    pub fn from_library_with(
+        snapshot: &LibrarySnapshot,
+        outcomes: &[OutcomeSignal],
+        params: &TasteParams,
+    ) -> Self {
         let ratings: Vec<f64> = snapshot
             .series
             .iter()
             .filter_map(|s| s.rating.map(f64::from))
             .collect();
-        let mean = (ratings.iter().sum::<f64>() + NEUTRAL_RATING * MEAN_SHRINKAGE)
-            / (ratings.len() as f64 + MEAN_SHRINKAGE);
+        let origin = params
+            .rating_origin
+            .unwrap_or_else(|| rating_origin(&ratings));
 
         let sources: Vec<Source> = snapshot
             .series
             .iter()
             .filter_map(|s| {
-                let weight = series_weight(s, mean)?;
+                let weight = series_weight(s, origin, params)?;
                 Some(Source {
                     title: s.title.clone(),
                     codex_series_id: Some(s.id.clone()),
                     rating: s.rating,
                     outcome: None,
                     weight,
-                    terms: term_keys(&s.genres, &s.tags),
+                    terms: term_keys(&s.genres, &s.tags).into_iter().collect(),
                     authors: s.authors.clone(),
                 })
             })
@@ -159,7 +206,7 @@ impl TasteVector {
                     rating: None,
                     outcome: Some(o.outcome),
                     weight: outcome_weight(o.outcome)?,
-                    terms: term_keys(&o.genres, &o.tags),
+                    terms: term_keys(&o.genres, &o.tags).into_iter().collect(),
                     authors: o.authors.clone(),
                 })
             }))
@@ -177,7 +224,12 @@ impl TasteVector {
             .into_iter()
             .map(|(term, (sum, count))| (term, sum / (count as f64).sqrt()))
             .collect();
-        Self { terms, sources }
+        Self {
+            terms,
+            sources,
+            tag_factor: params.tag_factor,
+            length_norm: params.length_norm,
+        }
     }
 
     /// No rating or completion to learn from (cold start).
@@ -229,6 +281,21 @@ impl TasteVector {
         }
     }
 
+    /// [`Self::apply_specificity`] with the caller's own library as the
+    /// corpus: a term most of their shelf carries ("Fantasy" on two thirds of
+    /// it) separates nothing, a rare one does. Measured on one library this
+    /// beat counts from the full MangaBaka dump, which also misses many
+    /// Codex tag names.
+    pub fn apply_library_specificity(&mut self, snapshot: &LibrarySnapshot) {
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for series in &snapshot.series {
+            for term in term_keys(&series.genres, &series.tags) {
+                *counts.entry(term).or_default() += 1;
+            }
+        }
+        self.apply_specificity(&counts, snapshot.series.len() as u64);
+    }
+
     pub fn score(&self, genres: &[String], tags: &[String]) -> Score {
         self.score_with_authors(genres, tags, &[])
     }
@@ -241,10 +308,42 @@ impl TasteVector {
         tags: &[String],
         authors: &[String],
     ) -> Score {
-        let mut score = self.term_score(genres, tags);
+        Score {
+            affinity: self.affinity(genres, tags, authors),
+            anchors: self.explain(genres, tags, authors),
+        }
+    }
+
+    /// The affinity alone: what ranking needs, without building anchors.
+    pub fn affinity(&self, genres: &[String], tags: &[String], authors: &[String]) -> f64 {
+        let weighted = genres
+            .iter()
+            .map(|g| (g, 1.0))
+            .chain(tags.iter().map(|t| (t, self.tag_factor)));
+        let mut total = 0.0;
+        let mut count = 0usize;
+        for (term, factor) in weighted {
+            total += factor * self.term_weight(term);
+            count += 1;
+        }
+        let mut affinity = if count == 0 {
+            0.0
+        } else {
+            total / (count as f64).powf(self.length_norm)
+        };
+        if self.shared_author(authors).is_some() {
+            affinity += AUTHOR_BOOST;
+        }
+        affinity
+    }
+
+    /// The caller's series that explain a score: a shared author first, then
+    /// the liked series sharing the most terms. Only worth computing for the
+    /// candidates actually returned.
+    pub fn explain(&self, genres: &[String], tags: &[String], authors: &[String]) -> Vec<Anchor> {
+        let mut anchors = self.anchors(genres, tags);
         if let Some((source, author)) = self.shared_author(authors) {
-            score.affinity += AUTHOR_BOOST;
-            score.anchors.insert(
+            anchors.insert(
                 0,
                 Anchor {
                     title: source.title.clone(),
@@ -255,9 +354,9 @@ impl TasteVector {
                     relation: Some("same author as".to_owned()),
                 },
             );
-            score.anchors.truncate(MAX_ANCHORS + 1);
+            anchors.truncate(MAX_ANCHORS + 1);
         }
-        score
+        anchors
     }
 
     /// The best-liked series sharing an author with the candidate.
@@ -272,28 +371,6 @@ impl TasteVector {
                 Some((source, author.clone()))
             })
             .max_by(|a, b| a.0.weight.total_cmp(&b.0.weight))
-    }
-
-    fn term_score(&self, genres: &[String], tags: &[String]) -> Score {
-        let weighted = genres
-            .iter()
-            .map(|g| (g, 1.0))
-            .chain(tags.iter().map(|t| (t, TAG_FACTOR)));
-        let mut total = 0.0;
-        let mut count = 0usize;
-        for (term, factor) in weighted {
-            total += factor * self.term_weight(term);
-            count += 1;
-        }
-        let affinity = if count == 0 {
-            0.0
-        } else {
-            total / (count as f64).sqrt()
-        };
-        Score {
-            affinity,
-            anchors: self.anchors(genres, tags),
-        }
     }
 
     /// The liked series sharing the most (weighted) terms with the candidate.
@@ -416,11 +493,32 @@ pub fn by_mangabaka_id(snapshot: &LibrarySnapshot) -> HashMap<i64, &SnapshotSeri
         .collect()
 }
 
+/// The neutral point of the caller's own rating scale: their mean (shrunk
+/// toward [`NEUTRAL_RATING`] so a handful of ratings stays sane) less one
+/// standard deviation (at least [`MIN_RATING_SD`]). Generous raters cluster
+/// high, so only a rating clearly below their norm counts against a series;
+/// measured from the plain mean, a generous rater's 80 read as dislike.
+fn rating_origin(ratings: &[f64]) -> f64 {
+    let n = ratings.len() as f64;
+    let mean =
+        (ratings.iter().sum::<f64>() + NEUTRAL_RATING * MEAN_SHRINKAGE) / (n + MEAN_SHRINKAGE);
+    let sd = if ratings.len() < 2 {
+        0.0
+    } else {
+        let raw_mean = ratings.iter().sum::<f64>() / n;
+        (ratings.iter().map(|r| (r - raw_mean).powi(2)).sum::<f64>() / n).sqrt()
+    };
+    mean - sd.max(MIN_RATING_SD)
+}
+
 /// How much one of the caller's series says about their taste, if anything.
-fn series_weight(series: &SnapshotSeries, mean: f64) -> Option<f64> {
+fn series_weight(series: &SnapshotSeries, origin: f64, params: &TasteParams) -> Option<f64> {
     match (series.rating, series.read_state) {
-        (Some(rating), _) => Some(((f64::from(rating) - mean) / RATING_SPREAD).clamp(-1.0, 1.0)),
-        (None, ReadState::Completed) => Some(COMPLETED_UNRATED),
+        (Some(rating), _) => {
+            Some(((f64::from(rating) - origin) / params.rating_spread).clamp(-1.0, 1.0))
+        }
+        (None, ReadState::Completed) => Some(params.completed_unrated),
+        (None, ReadState::InProgress) if params.in_progress != 0.0 => Some(params.in_progress),
         (None, _) => None,
     }
 }
@@ -436,23 +534,47 @@ fn term_keys(genres: &[String], tags: &[String]) -> Vec<String> {
     keys
 }
 
-/// Ranks a backlog by [`TasteVector`] affinity, for offline evaluation.
-pub struct AffinityRanker;
+/// Ranks a backlog by [`TasteVector`] affinity, for offline evaluation. The
+/// default is the configuration the candidate pools use.
+#[derive(Debug, Clone)]
+pub struct AffinityRanker {
+    pub params: TasteParams,
+    /// Weigh terms by their specificity within the caller's own library (the
+    /// offline stand-in for the dump's term counts).
+    pub library_specificity: bool,
+    /// Dump term counts and corpus size, applied after (and so overriding,
+    /// where the dump knows the term) library specificity.
+    pub dump_specificity: Option<(HashMap<String, i64>, u64)>,
+    pub label: Option<String>,
+}
+
+impl Default for AffinityRanker {
+    fn default() -> Self {
+        Self {
+            params: TasteParams::default(),
+            library_specificity: true,
+            dump_specificity: None,
+            label: None,
+        }
+    }
+}
 
 impl crate::eval::Ranker for AffinityRanker {
     fn name(&self) -> &str {
-        "affinity"
+        self.label.as_deref().unwrap_or("affinity")
     }
 
     fn rank(&self, snapshot: &LibrarySnapshot, backlog: &[&SnapshotSeries]) -> Vec<usize> {
-        let taste = TasteVector::from_snapshot(snapshot);
+        let mut taste = TasteVector::from_library_with(snapshot, &[], &self.params);
+        if self.library_specificity {
+            taste.apply_library_specificity(snapshot);
+        }
+        if let Some((counts, corpus)) = &self.dump_specificity {
+            taste.apply_specificity(counts, *corpus);
+        }
         let scores: Vec<f64> = backlog
             .iter()
-            .map(|s| {
-                taste
-                    .score_with_authors(&s.genres, &s.tags, &s.authors)
-                    .affinity
-            })
+            .map(|s| taste.affinity(&s.genres, &s.tags, &s.authors))
             .collect();
         let mut order: Vec<usize> = (0..backlog.len()).collect();
         // Stable: ties keep the library's own order.
@@ -555,6 +677,21 @@ mod tests {
     fn affinity_matching_is_case_insensitive() {
         let taste = fantasy_reader();
         assert_eq!(taste.term_weight("FANTASY"), taste.term_weight("fantasy"));
+    }
+
+    #[test]
+    fn affinity_a_generous_raters_good_ratings_all_count_as_liked() {
+        // Ratings clustered high: measured from the plain mean (86) an 80
+        // would read as dislike; from mean - sd it is still liked.
+        let library = LibrarySnapshot::from_series(vec![
+            series("a", &["Mystery"], &[], ReadState::Completed, Some(80)),
+            series("b", &["Fantasy"], &[], ReadState::Completed, Some(85)),
+            series("c", &["Fantasy"], &[], ReadState::Completed, Some(90)),
+            series("d", &["Romance"], &[], ReadState::Completed, Some(90)),
+        ]);
+        let taste = TasteVector::from_snapshot(&library);
+        assert!(taste.term_weight("Mystery") > 0.0);
+        assert!(taste.term_weight("Fantasy") > taste.term_weight("Mystery"));
     }
 
     #[test]
@@ -723,11 +860,88 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let library = LibrarySnapshot::from_series(series);
         let baseline = crate::eval::evaluate(&library, &crate::eval::SnapshotOrder).unwrap();
-        let affinity = crate::eval::evaluate(&library, &AffinityRanker).unwrap();
+        let affinity = crate::eval::evaluate(&library, &AffinityRanker::default()).unwrap();
         assert!(
             affinity.mean_rank_fraction < baseline.mean_rank_fraction,
             "affinity {affinity:?} vs baseline {baseline:?}"
         );
         assert!(affinity.recall_at_10 > baseline.recall_at_10);
+    }
+}
+
+/// Parameter sweep over a saved library, run on demand:
+/// `SHISHO_EVAL_FIXTURE=library.json cargo test -p shisho-services --lib
+/// affinity::tuning -- --ignored --nocapture`.
+#[cfg(test)]
+mod tuning {
+    use super::*;
+    use crate::eval::evaluate;
+
+    #[test]
+    #[ignore = "needs SHISHO_EVAL_FIXTURE"]
+    fn sweep() {
+        let path = std::env::var("SHISHO_EVAL_FIXTURE").expect("SHISHO_EVAL_FIXTURE");
+        let series: Vec<SnapshotSeries> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let library = LibrarySnapshot::from_series(series);
+        let base = TasteParams::default();
+        let dump: Option<(HashMap<String, i64>, u64)> =
+            std::env::var("SHISHO_EVAL_DUMP_DF").ok().map(|path| {
+                let rows: Vec<serde_json::Value> =
+                    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+                let counts = rows
+                    .iter()
+                    .map(|r| {
+                        (
+                            r["term"].as_str().unwrap().to_owned(),
+                            r["n"].as_i64().unwrap(),
+                        )
+                    })
+                    .collect();
+                (counts, 321_404)
+            });
+        let mut runs: Vec<(String, AffinityRanker)> = vec![
+            (
+                "no-idf".into(),
+                AffinityRanker {
+                    params: base.clone(),
+                    library_specificity: false,
+                    ..Default::default()
+                },
+            ),
+            ("default".into(), AffinityRanker::default()),
+        ];
+        if let Some(dump) = dump {
+            runs.push((
+                "dump-idf".into(),
+                AffinityRanker {
+                    params: base.clone(),
+                    library_specificity: false,
+                    dump_specificity: Some(dump.clone()),
+                    ..Default::default()
+                },
+            ));
+            runs.push((
+                "library+dump-idf".into(),
+                AffinityRanker {
+                    params: base.clone(),
+                    library_specificity: true,
+                    dump_specificity: Some(dump),
+                    ..Default::default()
+                },
+            ));
+        }
+        println!(
+            "{:<22} {:>9} {:>9} {:>7} {:>9}",
+            "run", "recall@10", "recall@40", "MRR", "rankfrac"
+        );
+        for (label, mut ranker) in runs {
+            ranker.label = Some(label.clone());
+            let r = evaluate(&library, &ranker).unwrap();
+            println!(
+                "{:<22} {:>9.3} {:>9.3} {:>7.3} {:>9.3}",
+                label, r.recall_at_10, r.recall_at_40, r.mrr, r.mean_rank_fraction
+            );
+        }
     }
 }

@@ -11,7 +11,7 @@ use super::{CODEX_KEY_REVOKED, swr_codex_unauthorized, tool_error, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_codex::CodexError;
-use shisho_services::library::{self, LibraryError, LibraryQuery, LibrarySeries};
+use shisho_services::library::{self, LibraryError, LibraryQuery, LibrarySeries, LibrarySort};
 use shisho_services::read_state::ReadState;
 
 /// Matches the service's own clamp; at the cap, truncation cannot be detected
@@ -34,6 +34,10 @@ pub struct SearchLibraryParams {
     /// Codex libraries to search, by name or ID (see list_libraries); empty = all.
     #[serde(default)]
     pub libraries: Vec<String>,
+    /// Result order: "rating" (the caller's highest-rated first, unrated last)
+    /// or "title". Default: library order.
+    #[serde(default)]
+    pub sort: Option<LibrarySort>,
     /// Default 50, capped at 200.
     #[serde(default)]
     pub limit: Option<usize>,
@@ -100,7 +104,7 @@ impl McpService {
     #[tool(
         name = "search_library",
         annotations(read_only_hint = true, open_world_hint = true),
-        description = "Search the caller's own Codex library by title/author text, genre, and read state. Answers questions like 'did I read anything by this author?' or 'what fantasy series am I mid-way through?'. Pure library view: results are the caller's own series only."
+        description = "Search the caller's own Codex library by title/author text, genre, and read state. Answers questions like 'did I read anything by this author?' or 'what fantasy series am I mid-way through?'. Each series carries the caller's own Codex rating (1-100) and rating notes when set; sort='rating' with state='completed' returns the caller's top shelf, the ground truth for taste. Pure library view: results are the caller's own series only."
     )]
     async fn search_library(
         &self,
@@ -117,6 +121,7 @@ impl McpService {
             genre: params.genre,
             state: params.state,
             libraries: params.libraries,
+            sort: params.sort,
             limit: Some((limit + 1).min(MAX_LIMIT)),
         };
         let mut series = match library::search_library(services, &user, &query).await {

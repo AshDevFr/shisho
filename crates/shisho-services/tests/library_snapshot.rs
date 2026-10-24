@@ -83,9 +83,13 @@ async fn snapshot_folds_multiple_pages() {
         .unwrap();
     assert_eq!(meshi.read_state, ReadState::Completed);
 
-    // Ratings presence from the bulk ratings call.
-    assert!(meshi.rated, "rated series flagged");
-    assert!(!frieren.rated);
+    // Rating values and notes from the bulk ratings call.
+    assert_eq!(meshi.rating, Some(85));
+    assert_eq!(
+        meshi.rating_notes.as_deref(),
+        Some("Great series, loved the art style!")
+    );
+    assert_eq!(frieren.rating, None);
 
     // Genres flattened for filtering.
     assert_eq!(frieren.genres, vec!["Fantasy", "Adventure"]);

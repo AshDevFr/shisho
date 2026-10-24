@@ -2,7 +2,7 @@
 //!
 //! The caller's full Codex series list (paginated, with their credential)
 //! is folded into the normalized owned `(Provider, id)` set, the read-state
-//! map, ratings presence, and the Codex series UUIDs. Cached per `user_sub`
+//! map, the caller's ratings, and the Codex series UUIDs. Cached per `user_sub`
 //! with SWR revalidation (~15 min): the owned set is slow-moving; read
 //! state moves fast mid-binge but its staleness is TTL-bounded and reported
 //! via `as_of`.
@@ -53,8 +53,10 @@ pub struct SnapshotSeries {
     /// Normalized known-provider IDs (unknown providers are excluded from
     /// joins and tracked in [`LibrarySnapshot::unresolvable`]).
     pub external_ids: Vec<ExternalId>,
-    /// The caller has a Codex rating for this series.
-    pub rated: bool,
+    /// The caller's Codex rating, 1-100 (Codex displays it as 1-10).
+    pub rating: Option<i32>,
+    /// The caller's free-text notes on that rating.
+    pub rating_notes: Option<String>,
 }
 
 /// A series that cannot participate in any Tsundoku join: none of its
@@ -291,12 +293,12 @@ async fn build(
     codex: &CodexClient,
     credential: &CodexCredential,
 ) -> Result<LibrarySnapshot, CodexError> {
-    let rated: HashSet<String> = codex
+    let mut ratings: HashMap<String, (i32, Option<String>)> = codex
         .user_ratings(credential)
         .await?
         .ratings
         .into_iter()
-        .map(|r| r.series_id)
+        .map(|r| (r.series_id, (r.rating, r.notes)))
         .collect();
 
     let mut rows = Vec::new();
@@ -339,9 +341,13 @@ async fn build(
             });
         }
 
+        let (rating, rating_notes) = ratings
+            .remove(&row.id)
+            .map_or((None, None), |(rating, notes)| (Some(rating), notes));
         snapshot.series.push(SnapshotSeries {
             read_state: ReadState::derive(row.book_count, row.unread_count),
-            rated: rated.contains(&row.id),
+            rating,
+            rating_notes,
             id: row.id,
             library_id: row.library_id,
             library_name: row.library_name,

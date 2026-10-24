@@ -143,7 +143,8 @@ mod tests {
             unread_count: Some(10),
             read_state,
             external_ids: vec![ExternalId::from_tsundoku(raw_id).unwrap()],
-            rated: false,
+            rating: None,
+            rating_notes: None,
         }
     }
 

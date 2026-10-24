@@ -3,7 +3,7 @@
 
 use shisho_codex::{CodexClient, CodexCredential};
 use shisho_config::{CacheConfig, Secret};
-use shisho_services::library::{LibraryQuery, search_library};
+use shisho_services::library::{LibraryQuery, LibrarySort, search_library};
 use shisho_services::read_state::ReadState;
 use shisho_services::{Services, UserCtx};
 use shisho_tsundoku::TsundokuClient;
@@ -169,4 +169,51 @@ fn mangabaka_inert() -> std::sync::Arc<shisho_mangabaka::MangabakaProvider> {
         )
         .expect("inert mangabaka provider"),
     )
+}
+
+#[tokio::test]
+async fn rating_sort_puts_the_top_shelf_first() {
+    let codex = MockServer::start().await;
+    // lib-e (Already Read) rated 90, lib-a (Frieren) rated 40, rest unrated.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ratings": [
+                { "id": "r1", "seriesId": "lib-a", "rating": 40, "notes": null },
+                { "id": "r2", "seriesId": "lib-e", "rating": 90, "notes": "a favourite" },
+            ]
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("candidates_library")))
+        .mount(&codex)
+        .await;
+
+    let results = search_library(
+        &services(&codex).await,
+        &user(),
+        &LibraryQuery {
+            sort: Some(LibrarySort::Rating),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("rating sort");
+
+    let ranked: Vec<(&str, Option<i32>)> = results
+        .iter()
+        .map(|s| (s.title.as_str(), s.rating))
+        .collect();
+    assert_eq!(ranked[0], ("Already Read", Some(90)));
+    assert_eq!(ranked[1], ("Sousou no Frieren", Some(40)));
+    assert!(ranked[2..].iter().all(|(_, r)| r.is_none()), "unrated last");
+}
+
+#[test]
+fn library_sort_schema_is_a_flat_inline_string_enum() {
+    let schema = serde_json::to_value(schemars::schema_for!(LibrarySort)).unwrap();
+    assert!(schema.get("oneOf").is_none(), "no oneOf: {schema}");
+    assert_eq!(schema["type"], "string");
 }

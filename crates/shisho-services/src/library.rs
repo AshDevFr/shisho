@@ -29,8 +29,25 @@ pub struct LibraryQuery {
     pub state: Option<ReadState>,
     /// Codex libraries to search (names or IDs); empty = all.
     pub libraries: Vec<String>,
+    /// Result order; default is the library's own order.
+    pub sort: Option<LibrarySort>,
     /// Default 50, capped at 200.
     pub limit: Option<usize>,
+}
+
+/// Result order for `search_library`.
+//
+// Schema note: plain `//` variant docs and `#[schemars(inline)]` keep this a
+// flat string enum; per-variant `///` docs become a `oneOf` that claude.ai's
+// tool-input serializer drops to null.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(inline)]
+pub enum LibrarySort {
+    // Highest Codex rating first; unrated series last.
+    Rating,
+    // Title, case-insensitive A-Z.
+    Title,
 }
 
 /// One library series, compact.
@@ -48,8 +65,12 @@ pub struct LibrarySeries {
     pub unread_count: Option<i64>,
     pub genres: Vec<String>,
     pub tags: Vec<String>,
-    /// The caller has a Codex rating for this series.
-    pub rated: bool,
+    /// The caller's Codex rating, 1-100 (Codex displays it as 1-10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating: Option<i32>,
+    /// The caller's notes on that rating.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating_notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,7 +133,7 @@ pub async fn search_library(
     };
 
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let results = snapshot
+    let mut matched: Vec<&library_snapshot::SnapshotSeries> = snapshot
         .series
         .iter()
         .filter(|s| match &text_matches {
@@ -133,6 +154,15 @@ pub async fn search_library(
             Some(state) => s.read_state == state,
             None => true,
         })
+        .collect();
+    match query.sort {
+        // Stable sorts: ties keep the library's own order.
+        Some(LibrarySort::Rating) => matched.sort_by_key(|s| std::cmp::Reverse(s.rating)),
+        Some(LibrarySort::Title) => matched.sort_by_key(|s| s.title.to_lowercase()),
+        None => {}
+    }
+    let results = matched
+        .into_iter()
         .take(limit)
         .map(|s| LibrarySeries {
             id: s.id.clone(),
@@ -143,7 +173,8 @@ pub async fn search_library(
             unread_count: s.unread_count,
             genres: s.genres.clone(),
             tags: s.tags.clone(),
-            rated: s.rated,
+            rating: s.rating,
+            rating_notes: s.rating_notes.clone(),
             status: s.status.clone(),
             year: s.year,
             external_ids: s

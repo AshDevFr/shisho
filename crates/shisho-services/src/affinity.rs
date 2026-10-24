@@ -45,7 +45,12 @@ pub struct Anchor {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub your_rating: Option<i32>,
     /// The genres and tags the candidate shares with it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub shared: Vec<String>,
+    /// Set for a franchise link: what the candidate is to this series
+    /// ("sequel of", "side story of").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relation: Option<String>,
 }
 
 /// A candidate's score.
@@ -189,6 +194,7 @@ impl TasteVector {
                         codex_series_id: source.codex_series_id.clone(),
                         your_rating: source.rating,
                         shared,
+                        relation: None,
                     },
                 ))
             })
@@ -200,6 +206,71 @@ impl TasteVector {
             .map(|(_, anchor)| anchor)
             .collect()
     }
+}
+
+/// Score shift for a sequel or side story of a series the caller finished and
+/// did not dislike: the highest-precision recommendation there is.
+const FRANCHISE_BOOST: f64 = 0.5;
+/// Score shift for a candidate whose earlier entry the caller has not
+/// finished (or finished and disliked): read the original first.
+const FRANCHISE_DEMOTE: f64 = -0.5;
+
+/// How a candidate's franchise links bear on recommending it now. `links`
+/// are its `(kind, mangabaka id)` pairs, where `kind` is what the linked
+/// series is to the candidate; only earlier entries (`prequel`, `main_story`)
+/// matter. `library` maps the caller's series by MangaBaka id. Returns the
+/// score shift and, for a boost, the anchor naming the finished entry.
+pub fn franchise_adjustment(
+    links: &[(String, i64)],
+    library: &HashMap<i64, &SnapshotSeries>,
+) -> (f64, Option<Anchor>) {
+    let mut demote = false;
+    for (kind, related) in links {
+        let relation = match kind.as_str() {
+            "prequel" => "sequel of",
+            "main_story" => "side story of",
+            _ => continue,
+        };
+        match library.get(related) {
+            Some(earlier)
+                if earlier.read_state == ReadState::Completed
+                    && earlier
+                        .rating
+                        .is_none_or(|r| f64::from(r) >= NEUTRAL_RATING) =>
+            {
+                return (
+                    FRANCHISE_BOOST,
+                    Some(Anchor {
+                        title: earlier.title.clone(),
+                        codex_series_id: earlier.id.clone(),
+                        your_rating: earlier.rating,
+                        shared: Vec::new(),
+                        relation: Some(relation.to_owned()),
+                    }),
+                );
+            }
+            _ => demote = true,
+        }
+    }
+    (if demote { FRANCHISE_DEMOTE } else { 0.0 }, None)
+}
+
+/// The caller's series keyed by MangaBaka id, for franchise lookups.
+pub fn by_mangabaka_id(snapshot: &LibrarySnapshot) -> HashMap<i64, &SnapshotSeries> {
+    snapshot
+        .series
+        .iter()
+        .filter_map(|s| {
+            let id = s
+                .external_ids
+                .iter()
+                .find(|e| e.provider == shisho_ids::Provider::Mangabaka)?
+                .id
+                .parse()
+                .ok()?;
+            Some((id, s))
+        })
+        .collect()
 }
 
 /// How much one of the caller's series says about their taste, if anything.
@@ -361,6 +432,41 @@ mod tests {
         )]));
         let w = taste.term_weight("Mystery");
         assert!(w > 0.0 && w < 0.5);
+    }
+
+    #[test]
+    fn franchise_boosts_a_sequel_of_a_finished_favourite() {
+        let fav = series("a", &["Fantasy"], &[], ReadState::Completed, Some(95));
+        let library = HashMap::from([(1_i64, &fav)]);
+        let (shift, anchor) = franchise_adjustment(&[("prequel".into(), 1)], &library);
+        assert!(shift > 0.0);
+        let anchor = anchor.unwrap();
+        assert_eq!(anchor.relation.as_deref(), Some("sequel of"));
+        assert_eq!(anchor.your_rating, Some(95));
+    }
+
+    #[test]
+    fn franchise_demotes_when_the_original_is_unread_unowned_or_disliked() {
+        let unread = series("a", &[], &[], ReadState::Untouched, None);
+        let disliked = series("b", &[], &[], ReadState::Completed, Some(20));
+        let library = HashMap::from([(1_i64, &unread), (2_i64, &disliked)]);
+        for links in [
+            vec![("prequel".to_owned(), 1)],
+            vec![("prequel".to_owned(), 2)],
+            vec![("main_story".to_owned(), 99)],
+        ] {
+            let (shift, anchor) = franchise_adjustment(&links, &library);
+            assert!(shift < 0.0, "{links:?}");
+            assert!(anchor.is_none());
+        }
+    }
+
+    #[test]
+    fn franchise_ignores_later_entries() {
+        let library = HashMap::new();
+        let (shift, _) =
+            franchise_adjustment(&[("sequel".into(), 5), ("spin_off".into(), 6)], &library);
+        assert_eq!(shift, 0.0);
     }
 
     #[test]

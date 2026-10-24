@@ -281,6 +281,21 @@ impl MangabakaProvider {
             .map_err(MangabakaError::Store)
     }
 
+    /// Franchise links (`kind`, related MangaBaka id) per series, from the
+    /// offline dump. Empty without a dump: links are a dump-only signal.
+    pub async fn relations(
+        &self,
+        ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, Vec<(String, i64)>>, MangabakaError> {
+        let Some(store) = self.current_store().await else {
+            return Ok(Default::default());
+        };
+        store
+            .relations_for_many(ids)
+            .await
+            .map_err(MangabakaError::Store)
+    }
+
     pub async fn offline_loaded(&self) -> bool {
         self.offline.read().await.is_some()
     }

@@ -24,7 +24,7 @@ use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 
-use crate::affinity::{Anchor, Score, TasteVector};
+use crate::affinity::{Anchor, Score, TasteVector, by_mangabaka_id, franchise_adjustment};
 use crate::library_snapshot::{self, CodexIndex, SnapshotSeries};
 use crate::read_state::ReadState;
 use crate::tsundoku_cache::Resolved;
@@ -325,10 +325,21 @@ async fn library_pool(
     // (no backend calls), then enrich only as far as the requested page.
     // Ties, and every series on a cold start, keep the library's own order.
     let taste = TasteVector::from_snapshot(&snapshot);
+    let library = by_mangabaka_id(&snapshot);
+    let eligible_ids: Vec<i64> = eligible
+        .iter()
+        .filter_map(|s| mangabaka_id(s.external_ids.iter()))
+        .collect();
+    let links = franchise_links(services, &eligible_ids).await;
     let mut ranked: Vec<(&SnapshotSeries, Option<Score>)> = eligible
         .into_iter()
         .map(|s| {
-            let score = (!taste.is_empty()).then(|| taste.score(&s.genres, &s.tags));
+            let mut score = (!taste.is_empty()).then(|| taste.score(&s.genres, &s.tags));
+            if let Some(series_links) =
+                mangabaka_id(s.external_ids.iter()).and_then(|id| links.get(&id))
+            {
+                apply_franchise(&mut score, series_links, &library);
+            }
             (s, score)
         })
         .collect();
@@ -566,6 +577,9 @@ async fn discover_pool(
         }
     };
 
+    let library = by_mangabaka_id(&snapshot_hit.value);
+    let found_ids: Vec<i64> = found.iter().map(|m| m.mangabaka_id).collect();
+    let links = franchise_links(services, &found_ids).await;
     let mut scored: Vec<(f64, Candidate)> = Vec::new();
     for meta in found {
         let mut ids = vec![ExternalId {
@@ -591,7 +605,14 @@ async fn discover_pool(
         {
             continue;
         }
-        let score = taste.score(&candidate.genres, &candidate.tags);
+        let mut score = Some(taste.score(&candidate.genres, &candidate.tags));
+        if let Some(series_links) = links.get(&meta.mangabaka_id) {
+            apply_franchise(&mut score, series_links, &library);
+        }
+        let score = score.unwrap_or_else(|| Score {
+            affinity: 0.0,
+            anchors: Vec::new(),
+        });
         // A small community-rating prior separates equally matching series.
         let total = score.affinity + DISCOVER_RATING_PRIOR * candidate.rating.unwrap_or(0.0) / 10.0;
         let mut candidate = candidate;
@@ -647,6 +668,39 @@ async fn discover_pool(
         },
         truncated,
     })
+}
+
+/// Franchise links for the given MangaBaka ids; empty (no adjustment) when
+/// the dump is absent or the lookup fails.
+async fn franchise_links(services: &Services, ids: &[i64]) -> HashMap<i64, Vec<(String, i64)>> {
+    match services.metadata.provider().relations(ids).await {
+        Ok(links) => links,
+        Err(err) => {
+            tracing::debug!(error = %err, "franchise lookup failed; ranking without it");
+            HashMap::new()
+        }
+    }
+}
+
+/// Shift a candidate's score for its franchise position, putting the
+/// franchise anchor first. A candidate with no taste score yet gains one.
+fn apply_franchise(
+    score: &mut Option<Score>,
+    links: &[(String, i64)],
+    library: &HashMap<i64, &SnapshotSeries>,
+) {
+    let (shift, anchor) = franchise_adjustment(links, library);
+    if shift == 0.0 {
+        return;
+    }
+    let score = score.get_or_insert_with(|| Score {
+        affinity: 0.0,
+        anchors: Vec::new(),
+    });
+    score.affinity += shift;
+    if let Some(anchor) = anchor {
+        score.anchors.insert(0, anchor);
+    }
 }
 
 /// A discover-pool candidate straight from the backbone.

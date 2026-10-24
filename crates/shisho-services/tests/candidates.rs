@@ -1102,3 +1102,72 @@ async fn discover_without_a_dump_names_itself_unavailable() {
         "{err:?}"
     );
 }
+
+#[tokio::test]
+async fn franchise_puts_an_unread_original_before_its_sequel() {
+    let (_c, _t, services) = discover_services(&[]).await;
+    let set = get_candidates(&services, &user(), Pool::Discover, &Filters::default())
+        .await
+        .unwrap();
+    let titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    let pos = |t: &str| titles.iter().position(|x| *x == t).unwrap();
+    assert!(
+        pos("Sousou no Frieren") < pos("Frieren Sequel"),
+        "read the original first: {titles:?}"
+    );
+}
+
+#[tokio::test]
+async fn franchise_boosts_the_sequel_of_a_finished_favourite() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    // Frieren read and loved; its sequel and an unrelated Fantasy series unread.
+    let rows = vec![
+        codex_row("s112092", "Sousou no Frieren", &["Fantasy"], 10, 0),
+        codex_row("s112093", "Frieren Sequel", &["Fantasy"], 3, 3),
+        codex_row("s424242", "Unrelated Fantasy", &["Fantasy"], 3, 3),
+    ];
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": 3, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [
+                { "id": "r1", "seriesId": "s112092", "rating": 95, "notes": null },
+            ]})),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(&tsundoku)
+        .await;
+    let http = reqwest::Client::new();
+    let services = Services::new(
+        CodexClient::new(&codex.uri(), http.clone()),
+        TsundokuClient::new(&tsundoku.uri(), Secret::new("admin-token"), http),
+        mangabaka_with_dump().await,
+        fresh_db().await,
+        &CacheConfig::default(),
+        false,
+    );
+
+    let set = get_candidates(&services, &user(), Pool::Library, &Filters::default())
+        .await
+        .unwrap();
+    assert_eq!(set.candidates[0].title, "Frieren Sequel");
+    let relation = set.candidates[0]
+        .because
+        .iter()
+        .find(|a| a.relation.is_some())
+        .expect("a franchise anchor");
+    assert_eq!(relation.relation.as_deref(), Some("sequel of"));
+    assert_eq!(relation.title, "Sousou no Frieren");
+    assert_eq!(relation.your_rating, Some(95));
+}

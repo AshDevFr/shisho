@@ -222,6 +222,35 @@ impl OfflineStore {
         Ok(found)
     }
 
+    /// [`Self::relations_for`] for many series in one query.
+    pub async fn relations_for_many(
+        &self,
+        ids: &[i64],
+    ) -> anyhow::Result<HashMap<i64, Vec<(String, i64)>>> {
+        let mut out: HashMap<i64, Vec<(String, i64)>> = HashMap::new();
+        if ids.is_empty() || !self.has_table("series_relations").await? {
+            return Ok(out);
+        }
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                format!(
+                    "SELECT series_id, kind, related_id FROM series_relations \
+                     WHERE series_id IN ({placeholders})"
+                ),
+                ids.iter().map(|&id| id.into()),
+            ))
+            .await?;
+        for row in rows {
+            out.entry(row.try_get("", "series_id")?)
+                .or_default()
+                .push((row.try_get("", "kind")?, row.try_get("", "related_id")?));
+        }
+        Ok(out)
+    }
+
     async fn has_table(&self, name: &str) -> anyhow::Result<bool> {
         Ok(self
             .db

@@ -124,11 +124,6 @@ impl LibrarySnapshot {
         self.owned.contains(&(id.provider.clone(), id.id.clone()))
     }
 
-    /// Any of `ids` owned — the per-candidate anti-join.
-    pub fn owns_any<'a>(&self, ids: impl IntoIterator<Item = &'a ExternalId>) -> bool {
-        ids.into_iter().any(|id| self.owns(id))
-    }
-
     /// Find the library series carrying the given external ID, if any.
     pub fn series_by_external_id(&self, id: &ExternalId) -> Option<&SnapshotSeries> {
         self.series

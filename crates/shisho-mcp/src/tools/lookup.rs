@@ -6,7 +6,7 @@ use rmcp::model::CallToolResult;
 use rmcp::{ErrorData, tool, tool_router};
 use serde::Deserialize;
 
-use super::{tool_error, tool_json};
+use super::{error_chain, tool_error, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_services::lookup;
@@ -38,7 +38,7 @@ impl McpService {
             Ok(view) => tool_json(&view),
             // LookupError Display strings are self-contained and already carry
             // the per-source gaps where relevant.
-            Err(err) => Ok(tool_error(err.to_string())),
+            Err(err) => Ok(tool_error(error_chain(&err))),
         }
     }
 }

@@ -7,7 +7,7 @@ use rmcp::model::CallToolResult;
 use rmcp::{ErrorData, tool, tool_router};
 use serde::{Deserialize, Serialize};
 
-use super::{CODEX_KEY_REVOKED, swr_codex_unauthorized, tool_error, tool_json};
+use super::{CODEX_KEY_REVOKED, error_chain, swr_codex_unauthorized, tool_error, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_codex::CodexError;
@@ -156,6 +156,6 @@ fn map_error(err: &LibraryError) -> CallToolResult {
     match err {
         LibraryError::Snapshot(swr) if swr_codex_unauthorized(swr) => tool_error(CODEX_KEY_REVOKED),
         LibraryError::Search(CodexError::Unauthorized { .. }) => tool_error(CODEX_KEY_REVOKED),
-        other => tool_error(other.to_string()),
+        other => tool_error(error_chain(other)),
     }
 }

@@ -46,7 +46,39 @@ pub(crate) fn tool_error(message: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.into())])
 }
 
+/// An error and every `source()` beneath it, joined with ": ", so the model
+/// sees the cause ("verdict query failed: database is locked") rather than
+/// only the outermost message.
+pub(crate) fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut text = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let cause_text = cause.to_string();
+        // Transparent wrappers repeat their inner message; skip the echo.
+        if !text.ends_with(&cause_text) {
+            text.push_str(": ");
+            text.push_str(&cause_text);
+        }
+        source = cause.source();
+    }
+    text
+}
+
 /// Did this SWR build fail because Codex rejected the caller's credential?
 pub(crate) fn swr_codex_unauthorized(err: &SwrError<CodexError>) -> bool {
     matches!(err, SwrError::Load(CodexError::Unauthorized { .. }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::error_chain;
+    use shisho_services::candidates::CandidatesError;
+
+    #[test]
+    fn error_chain_includes_the_underlying_cause() {
+        let err = CandidatesError::Db(sea_orm::DbErr::Custom("boom".into()));
+        let text = error_chain(&err);
+        assert!(text.starts_with("verdict query failed"), "{text}");
+        assert!(text.contains("boom"), "{text}");
+    }
 }

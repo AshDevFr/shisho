@@ -10,7 +10,6 @@ use utoipa::ToSchema;
 ///
 /// Some variants have no producer yet: they are the stable error contract that
 /// handlers return as the API surface grows.
-#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     /// The requested resource does not exist.

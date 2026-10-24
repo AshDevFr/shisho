@@ -6,7 +6,7 @@ use rmcp::model::CallToolResult;
 use rmcp::{ErrorData, tool, tool_router};
 use serde::Deserialize;
 
-use super::{CODEX_KEY_REVOKED, swr_codex_unauthorized, tool_error, tool_json};
+use super::{CODEX_KEY_REVOKED, error_chain, swr_codex_unauthorized, tool_error, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_services::candidates::{self, CandidatesError, Filters, Pool};
@@ -77,9 +77,7 @@ impl McpService {
 fn map_error(err: &CandidatesError) -> CallToolResult {
     match err {
         CandidatesError::Codex(swr) if swr_codex_unauthorized(swr) => tool_error(CODEX_KEY_REVOKED),
-        // Display strings are self-contained ("the acquirable pool is degraded:
-        // Tsundoku is unavailable", ...).
-        other => tool_error(other.to_string()),
+        other => tool_error(error_chain(other)),
     }
 }
 

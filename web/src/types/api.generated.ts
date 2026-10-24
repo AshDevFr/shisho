@@ -752,6 +752,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -760,6 +761,7 @@ export interface operations {
                     "application/json": components["schemas"]["EncryptionStatus"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -788,6 +790,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -796,6 +799,7 @@ export interface operations {
                     "application/json": components["schemas"]["AdminUser"][];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -827,12 +831,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description No Content */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -841,6 +847,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -849,6 +856,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -871,6 +879,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description No Content */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -886,6 +895,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -894,6 +904,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -902,6 +913,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -921,6 +933,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -929,6 +942,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConnectionResponse"][];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -937,6 +951,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -959,12 +974,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description No Content */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -973,6 +990,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -981,6 +999,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1000,6 +1019,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1028,6 +1048,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1047,6 +1068,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1055,6 +1077,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiKeyResponse"][];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1063,6 +1086,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1086,6 +1110,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1103,6 +1128,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1111,6 +1137,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1133,12 +1160,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description No Content */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1147,6 +1176,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1155,6 +1185,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1174,6 +1205,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1182,6 +1214,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProfileResponse"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1190,6 +1223,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1198,6 +1232,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1221,6 +1256,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1229,6 +1265,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProfileResponse"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1237,6 +1274,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1245,6 +1283,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1267,6 +1306,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1275,6 +1315,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProfileResponse"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1283,6 +1324,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1291,6 +1333,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1299,6 +1342,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1321,12 +1365,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description No Content */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1335,6 +1381,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1343,6 +1390,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1351,6 +1399,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1370,6 +1419,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1378,6 +1428,7 @@ export interface operations {
                     "text/markdown": unknown;
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1386,6 +1437,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1394,6 +1446,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1413,6 +1466,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1421,6 +1475,7 @@ export interface operations {
                     "application/json": components["schemas"]["VersionDto"][];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1429,6 +1484,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1437,6 +1493,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1459,6 +1516,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1490,6 +1548,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1527,6 +1586,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1535,6 +1595,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1543,6 +1604,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1551,6 +1613,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Service Unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -1570,12 +1633,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Accepted */
             202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1584,6 +1649,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1592,6 +1658,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Service Unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -1620,6 +1687,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1628,6 +1696,7 @@ export interface operations {
                     "application/json": components["schemas"]["SessionGroup"][];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1636,6 +1705,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1644,6 +1714,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1670,6 +1741,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1678,6 +1750,7 @@ export interface operations {
                     "application/json": components["schemas"]["VerdictDto"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1686,6 +1759,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1694,6 +1768,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1702,6 +1777,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1721,6 +1797,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1729,6 +1806,7 @@ export interface operations {
                     "application/json": components["schemas"]["WhoAmI"];
                 };
             };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;

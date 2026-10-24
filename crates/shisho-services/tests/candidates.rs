@@ -460,14 +460,15 @@ async fn owned_prefilter_opt_in_adds_the_bandwidth_filter() {
     let db = fresh_db().await;
     mount_codex_library(&codex).await;
 
-    // The mock only matches when owned=false is present.
+    // The mock only matches when owned=false is present; both catalog reads
+    // (by rating and newest) carry it.
     Mock::given(method("GET"))
         .and(path("/api/v1/series"))
         .and(wiremock::matchers::query_param("owned", "false"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "acquirable_page")),
         )
-        .expect(1)
+        .expect(2)
         .mount(&tsundoku)
         .await;
     for id in [301, 302, 303] {
@@ -1170,4 +1171,136 @@ async fn franchise_boosts_the_sequel_of_a_finished_favourite() {
     assert_eq!(relation.relation.as_deref(), Some("sequel of"));
     assert_eq!(relation.title, "Sousou no Frieren");
     assert_eq!(relation.your_rating, Some(95));
+}
+
+/// Mount a Tsundoku catalog: one list page (answering every sort) and a
+/// detail per item. Items are `(id, title, genres, rating 0-10)`.
+async fn mount_catalog(tsundoku: &MockServer, items: &[(i64, &str, &[&str], f64)]) {
+    let rows: Vec<serde_json::Value> = items
+        .iter()
+        .map(|(id, title, genres, rating)| {
+            let mut row = fixture("tsundoku", "acquirable_page")["items"][0].clone();
+            row["id"] = (*id).into();
+            row["canonicalTitle"] = (*title).into();
+            row["genres"] = serde_json::json!(genres);
+            row["tags"] = serde_json::json!([]);
+            row["rating"] = (*rating).into();
+            row
+        })
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": rows, "page": 0, "pageSize": 50, "total": items.len(),
+        })))
+        .mount(tsundoku)
+        .await;
+    for (id, title, genres, rating) in items {
+        let mut detail = fixture("tsundoku", "acquirable_detail_301");
+        detail["id"] = (*id).into();
+        detail["canonicalTitle"] = (*title).into();
+        detail["genres"] = serde_json::json!(genres);
+        detail["tags"] = serde_json::json!([]);
+        detail["rating"] = (*rating).into();
+        detail["externalIds"] = serde_json::json!([
+            { "provider": "mangadex", "externalId": format!("md-{id}"), "fetchedAt": 1765200000 }
+        ]);
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v1/series/{id}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(detail))
+            .mount(tsundoku)
+            .await;
+    }
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(tsundoku)
+        .await;
+}
+
+/// A Codex library of one completed, highly rated series in `genre`, with
+/// an empty external index (owns nothing in the catalog).
+async fn mount_one_genre_reader(codex: &MockServer, genre: &str) {
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [codex_row("s1", &format!("Loved {genre}"), &[genre], 10, 0)],
+            "page": 1, "pageSize": 100, "total": 1, "totalPages": 1
+        })))
+        .mount(codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [
+                { "id": "r1", "seriesId": "s1", "rating": 95, "notes": null },
+            ]})),
+        )
+        .mount(codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/external-index"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [], "page": 1, "pageSize": 500, "total": 0, "totalPages": 1
+        })))
+        .mount(codex)
+        .await;
+}
+
+#[tokio::test]
+async fn acquirable_ranking_follows_each_callers_taste() {
+    let catalog: &[(i64, &str, &[&str], f64)] = &[
+        (601, "Catalog Horror", &["Horror"], 8.0),
+        (602, "Catalog Fantasy", &["Fantasy"], 8.0),
+    ];
+    let mut tops = Vec::new();
+    for genre in ["Fantasy", "Horror"] {
+        let codex = MockServer::start().await;
+        let tsundoku = MockServer::start().await;
+        mount_one_genre_reader(&codex, genre).await;
+        mount_catalog(&tsundoku, catalog).await;
+        let set = get_candidates(
+            &services(&codex, &tsundoku, fresh_db().await),
+            &user(),
+            Pool::Acquirable,
+            &Filters::default(),
+        )
+        .await
+        .unwrap();
+        tops.push(set.candidates[0].title.clone());
+        assert!(set.candidates[0].score.is_some());
+    }
+    assert_eq!(tops, vec!["Catalog Fantasy", "Catalog Horror"]);
+}
+
+#[tokio::test]
+async fn acquirable_diversity_lifts_a_different_genre_into_the_top_three() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_codex_library(&codex).await;
+    let mut catalog: Vec<(i64, String, &[&str], f64)> = (0..10)
+        .map(|i| (700 + i, format!("Fantasy {i}"), &["Fantasy"][..], 9.0))
+        .collect();
+    catalog.push((799, "The Romance".into(), &["Romance"][..], 8.9));
+    let refs: Vec<(i64, &str, &[&str], f64)> = catalog
+        .iter()
+        .map(|(id, t, g, r)| (*id, t.as_str(), *g, *r))
+        .collect();
+    mount_catalog(&tsundoku, &refs).await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, fresh_db().await),
+        &user(),
+        Pool::Acquirable,
+        &Filters::default(),
+    )
+    .await
+    .unwrap();
+    let top3: Vec<&str> = set
+        .candidates
+        .iter()
+        .take(3)
+        .map(|c| c.title.as_str())
+        .collect();
+    assert!(top3.contains(&"The Romance"), "{top3:?}");
 }

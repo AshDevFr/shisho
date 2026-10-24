@@ -43,9 +43,19 @@ const DEFAULT_LIMIT: usize = 40;
 const MAX_LIMIT: usize = 100;
 /// Acquirable pool: catalog page size per cached list query.
 const CATALOG_PAGE_SIZE: u32 = 50;
-/// Acquirable pool: stop examining the catalog after this many items even
-/// if the target is not met (bounds work when filters reject everything).
-const MAX_EXAMINED_FACTOR: usize = 8;
+/// Acquirable pool: catalog series examined by rating per wanted candidate,
+/// with a floor and a cap on the slice (bounds work when filters reject much).
+const ACQUIRABLE_SLICE_FACTOR: usize = 3;
+const ACQUIRABLE_MIN_SLICE: usize = 150;
+const ACQUIRABLE_MAX_SLICE: usize = 300;
+/// Acquirable pool score weights: taste, community rating (0-1), and novelty
+/// (among the newest catalog series). Initial values; tune with `shisho eval`
+/// once outcome data exists.
+const ACQUIRABLE_W_AFFINITY: f64 = 0.6;
+const ACQUIRABLE_W_COMMUNITY: f64 = 0.3;
+const ACQUIRABLE_W_NOVELTY: f64 = 0.1;
+/// Diversity trade-off: 1.0 is pure score order.
+const MMR_LAMBDA: f64 = 0.7;
 /// Descriptions ship trimmed to about this many characters; `lookup` has the
 /// full text.
 const DESCRIPTION_CHARS: usize = 280;
@@ -419,7 +429,10 @@ async fn library_pool(
     })
 }
 
-/// The Tier 1 pool: Tsundoku's catalog minus everything the caller owns.
+/// The Tier 1 pool: Tsundoku's catalog minus everything the caller owns,
+/// re-ranked for the caller. A wide slice (the best-rated series plus the
+/// newest) is examined, scored by taste, community rating and novelty, then
+/// diversified so one genre does not take the whole page.
 async fn acquirable_pool(
     services: &Services,
     user: &UserCtx,
@@ -430,16 +443,22 @@ async fn acquirable_pool(
             pool: Pool::Acquirable.name(),
         });
     }
-    // The acquirable pool needs the caller's owned set only (no read-state), so
-    // it uses the slim cached Codex index rather than the full library snapshot:
-    // an external id that keys into the index is owned.
+    // Ownership comes from the slim cached Codex index (an external id that
+    // keys into it is owned); the full snapshot supplies the taste.
     let index_hit = services
         .snapshots
         .external_index(&user.user_sub, &user.credential)
         .await
         .map_err(CandidatesError::Codex)?;
     let owned_index = index_hit.value;
+    let snapshot = services
+        .snapshots
+        .get(&user.user_sub, &user.credential)
+        .await
+        .map_err(CandidatesError::Codex)?
+        .value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
+    let taste = TasteVector::from_snapshot(&snapshot);
 
     let degraded = |source| CandidatesError::TsundokuDegraded {
         pool: Pool::Acquirable.name(),
@@ -447,72 +466,103 @@ async fn acquirable_pool(
     };
 
     let limit = filters.limit();
-    let max_examined = limit * MAX_EXAMINED_FACTOR;
-    let mut candidates = Vec::new();
+    let offset = filters.offset.unwrap_or(0);
+    let wanted = offset + limit;
+    let by_rating =
+        (wanted * ACQUIRABLE_SLICE_FACTOR).clamp(ACQUIRABLE_MIN_SLICE, ACQUIRABLE_MAX_SLICE);
+
+    // The slice: catalog ids in rating order, then the newest page; an id
+    // seen in both counts as rating-sourced and novel.
     let mut tsundoku_as_of: Option<DateTime<Utc>> = None;
-    let mut truncated = false;
-    let mut examined = 0usize;
+    let mut slice: Vec<i32> = Vec::new();
+    let mut catalog_has_more = false;
     let mut page: u32 = 0;
-
-    'pages: loop {
-        let query = SeriesListQuery {
-            page: Some(page),
-            page_size: Some(CATALOG_PAGE_SIZE),
-            kind: Some("manga".into()),
-            has_releases: Some(true),
-            status: filters.status.clone(),
-            genres: (!filters.genres.is_empty()).then(|| filters.genres.clone()),
-            tags: (!filters.tags.is_empty()).then(|| filters.tags.clone()),
-            sort: Some("rating".into()),
-            order: Some(Order::Desc),
-            // Bandwidth pre-filter only, and only when the deployment opted
-            // in; the anti-join below is the correctness gate.
-            owned: services.tsundoku_owned_prefilter.then_some(false),
-            ..Default::default()
-        };
-
-        let list_hit = services.tsundoku.list(&query).await.map_err(degraded)?;
+    while slice.len() < by_rating {
+        let list_hit = services
+            .tsundoku
+            .list(&catalog_query(services, filters, page, "rating"))
+            .await
+            .map_err(degraded)?;
         tsundoku_as_of = oldest(tsundoku_as_of, list_hit.as_of);
         let items = &list_hit.value.items;
         if items.is_empty() {
             break;
         }
-
-        let pending: Vec<_> = items
-            .iter()
-            .map(|item| catalog_item_candidate(services, &owned_index, &verdicts, filters, item.id))
-            .collect();
-        let mut details = stream::iter(pending).buffered(FAN_OUT);
-
-        let mut consumed = 0usize;
-        loop {
-            if candidates.len() == limit || examined == max_examined {
-                truncated = consumed < items.len() || page_has_more(page, list_hit.value.total);
-                break 'pages;
-            }
-            let Some(result) = details.next().await else {
-                break;
-            };
-            consumed += 1;
-            examined += 1;
-            let (candidate, as_of) = result.map_err(degraded)?;
-            tsundoku_as_of = oldest(tsundoku_as_of, as_of);
-            if let Some(candidate) = candidate {
-                candidates.push(candidate);
-            }
-        }
-
+        slice.extend(items.iter().map(|i| i.id));
         if !page_has_more(page, list_hit.value.total) {
             break;
         }
+        catalog_has_more = true;
         page += 1;
     }
+    catalog_has_more &= slice.len() >= by_rating;
+    let newest_hit = services
+        .tsundoku
+        .list(&catalog_query(services, filters, 0, "published_start_date"))
+        .await
+        .map_err(degraded)?;
+    tsundoku_as_of = oldest(tsundoku_as_of, newest_hit.as_of);
+    let novel: std::collections::HashSet<i32> =
+        newest_hit.value.items.iter().map(|i| i.id).collect();
+    for item in &newest_hit.value.items {
+        if !slice.contains(&item.id) {
+            slice.push(item.id);
+        }
+    }
+
+    let pending: Vec<_> = slice
+        .iter()
+        .map(|&id| catalog_item_candidate(services, &owned_index, &verdicts, filters, id))
+        .collect();
+    let mut details = stream::iter(pending).buffered(FAN_OUT);
+    let mut pool: Vec<Candidate> = Vec::new();
+    while let Some(result) = details.next().await {
+        let (candidate, as_of) = result.map_err(degraded)?;
+        tsundoku_as_of = oldest(tsundoku_as_of, as_of);
+        pool.extend(candidate);
+    }
+
+    let library = by_mangabaka_id(&snapshot);
+    let ids: Vec<i64> = pool.iter().filter_map(|c| c.mangabaka_id).collect();
+    let links = franchise_links(services, &ids).await;
+    let mut scored: Vec<(f64, Candidate)> = pool
+        .into_iter()
+        .map(|mut candidate| {
+            let mut score = Some(taste.score(&candidate.genres, &candidate.tags));
+            if let Some(series_links) = candidate.mangabaka_id.and_then(|id| links.get(&id)) {
+                apply_franchise(&mut score, series_links, &library);
+            }
+            let score = score.unwrap_or_else(|| Score {
+                affinity: 0.0,
+                anchors: Vec::new(),
+            });
+            let community = candidate.rating.unwrap_or(0.0) / 10.0;
+            let novelty = if candidate
+                .tsundoku_series_id
+                .is_some_and(|id| novel.contains(&id))
+            {
+                1.0
+            } else {
+                0.0
+            };
+            let total = ACQUIRABLE_W_AFFINITY * score.affinity
+                + ACQUIRABLE_W_COMMUNITY * community
+                + ACQUIRABLE_W_NOVELTY * novelty;
+            candidate.score = Some(round3(total));
+            candidate.because = score.anchors;
+            (total, candidate)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let ranked = diversify(scored, wanted);
+    let truncated = ranked.len() > wanted || catalog_has_more;
+    let mut candidates: Vec<Candidate> = ranked.into_iter().skip(offset).take(limit).collect();
 
     if let Err(err) = attach_coverage(services, &mut candidates).await {
         tracing::warn!(error = %err, "coverage attach failed; acquirable candidates ship without spans");
     }
     for candidate in &mut candidates {
-        compact(candidate, None);
+        compact(candidate, Some(&taste));
     }
 
     Ok(CandidateSet {
@@ -524,6 +574,62 @@ async fn acquirable_pool(
         },
         truncated,
     })
+}
+
+/// One page of the Tsundoku catalog for the acquirable pool, sorted by `sort`.
+fn catalog_query(services: &Services, filters: &Filters, page: u32, sort: &str) -> SeriesListQuery {
+    SeriesListQuery {
+        page: Some(page),
+        page_size: Some(CATALOG_PAGE_SIZE),
+        kind: Some("manga".into()),
+        has_releases: Some(true),
+        status: filters.status.clone(),
+        genres: (!filters.genres.is_empty()).then(|| filters.genres.clone()),
+        tags: (!filters.tags.is_empty()).then(|| filters.tags.clone()),
+        sort: Some(sort.into()),
+        order: Some(Order::Desc),
+        // Bandwidth pre-filter only, and only when the deployment opted in;
+        // the anti-join is the correctness gate.
+        owned: services.tsundoku_owned_prefilter.then_some(false),
+        ..Default::default()
+    }
+}
+
+/// Maximal-marginal-relevance reordering over genre sets: repeatedly take the
+/// candidate with the best `lambda * score - (1 - lambda) * similarity`,
+/// where similarity is the highest genre overlap (Jaccard) with anything
+/// already taken. Orders the first `wanted` (plus one, so truncation can be
+/// detected); the rest keep score order.
+fn diversify(mut scored: Vec<(f64, Candidate)>, wanted: usize) -> Vec<Candidate> {
+    let mut taken: Vec<Candidate> = Vec::with_capacity(scored.len());
+    while !scored.is_empty() && taken.len() <= wanted {
+        let best = scored
+            .iter()
+            .enumerate()
+            .map(|(i, (score, candidate))| {
+                let similarity = taken
+                    .iter()
+                    .map(|t| genre_overlap(&t.genres, &candidate.genres))
+                    .fold(0.0, f64::max);
+                (i, MMR_LAMBDA * score - (1.0 - MMR_LAMBDA) * similarity)
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+            .map(|(i, _)| i)
+            .expect("non-empty");
+        taken.push(scored.remove(best).1);
+    }
+    taken.extend(scored.into_iter().map(|(_, c)| c));
+    taken
+}
+
+/// Jaccard overlap of two genre lists, case-insensitive.
+fn genre_overlap(a: &[String], b: &[String]) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let a: std::collections::HashSet<String> = a.iter().map(|g| g.to_lowercase()).collect();
+    let b: std::collections::HashSet<String> = b.iter().map(|g| g.to_lowercase()).collect();
+    a.intersection(&b).count() as f64 / a.union(&b).count() as f64
 }
 
 /// The discover pool: MangaBaka dump series in the comic formats, ranked by

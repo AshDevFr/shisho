@@ -75,6 +75,8 @@ pub struct ReconcileSweepReport {
     pub with_snapshot: usize,
     pub flagged: usize,
     pub resolved: usize,
+    /// Outcomes recorded from Codex ratings.
+    pub inferred: usize,
 }
 
 /// What one unresolvable scan saw across all known users.
@@ -109,6 +111,7 @@ pub async fn run_reconcile_sweep(
         .await?;
         report.flagged += outcome.flagged;
         report.resolved += outcome.resolved;
+        report.inferred += outcome.inferred;
     }
     *services
         .sweeps
@@ -121,6 +124,7 @@ pub async fn run_reconcile_sweep(
         with_snapshot = report.with_snapshot,
         flagged = report.flagged,
         resolved = report.resolved,
+        inferred = report.inferred,
         "reconcile sweep complete"
     );
     Ok(report)

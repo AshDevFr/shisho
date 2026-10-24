@@ -227,6 +227,7 @@ mod tests {
             external_ids: Vec::new(),
             rating,
             rating_notes: None,
+            rating_updated_at: None,
         }
     }
 

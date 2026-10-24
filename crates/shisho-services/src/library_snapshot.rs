@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::read_state::ReadState;
 use shisho_cache::{Cached, SwrCache, SwrConfig, SwrError};
-use shisho_codex::{CodexClient, CodexCredential, CodexError};
+use shisho_codex::{CodexClient, CodexCredential, CodexError, UserSeriesRating};
 use shisho_ids::{ExternalId, Provider};
 
 /// Codex caps `pageSize` at 100; ask for the cap to minimize round-trips.
@@ -64,6 +64,9 @@ pub struct SnapshotSeries {
     pub rating: Option<i32>,
     /// The caller's free-text notes on that rating.
     pub rating_notes: Option<String>,
+    /// When the caller last set or changed the rating.
+    #[serde(default)]
+    pub rating_updated_at: Option<DateTime<Utc>>,
 }
 
 /// External ids as their canonical `<token>:<id>` strings on the wire.
@@ -305,12 +308,12 @@ async fn build(
     codex: &CodexClient,
     credential: &CodexCredential,
 ) -> Result<LibrarySnapshot, CodexError> {
-    let mut ratings: HashMap<String, (i32, Option<String>)> = codex
+    let mut ratings: HashMap<String, UserSeriesRating> = codex
         .user_ratings(credential)
         .await?
         .ratings
         .into_iter()
-        .map(|r| (r.series_id, (r.rating, r.notes)))
+        .map(|r| (r.series_id.clone(), r))
         .collect();
 
     let mut rows = Vec::new();
@@ -353,13 +356,12 @@ async fn build(
             });
         }
 
-        let (rating, rating_notes) = ratings
-            .remove(&row.id)
-            .map_or((None, None), |(rating, notes)| (Some(rating), notes));
+        let rated = ratings.remove(&row.id);
         snapshot.series.push(SnapshotSeries {
             read_state: ReadState::derive(row.book_count, row.unread_count),
-            rating,
-            rating_notes,
+            rating: rated.as_ref().map(|r| r.rating),
+            rating_updated_at: rated.as_ref().and_then(|r| r.updated_at),
+            rating_notes: rated.and_then(|r| r.notes),
             id: row.id,
             library_id: row.library_id,
             library_name: row.library_name,

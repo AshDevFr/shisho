@@ -174,7 +174,7 @@ impl TasteVector {
             .collect();
         let origin = params
             .rating_origin
-            .unwrap_or_else(|| rating_origin(&ratings));
+            .unwrap_or_else(|| RatingScale::of(&ratings).origin);
 
         let sources: Vec<Source> = snapshot
             .series
@@ -493,22 +493,59 @@ pub fn by_mangabaka_id(snapshot: &LibrarySnapshot) -> HashMap<i64, &SnapshotSeri
         .collect()
 }
 
-/// The neutral point of the caller's own rating scale: their mean (shrunk
-/// toward [`NEUTRAL_RATING`] so a handful of ratings stays sane) less one
-/// standard deviation (at least [`MIN_RATING_SD`]). Generous raters cluster
-/// high, so only a rating clearly below their norm counts against a series;
-/// measured from the plain mean, a generous rater's 80 read as dislike.
-fn rating_origin(ratings: &[f64]) -> f64 {
-    let n = ratings.len() as f64;
-    let mean =
-        (ratings.iter().sum::<f64>() + NEUTRAL_RATING * MEAN_SHRINKAGE) / (n + MEAN_SHRINKAGE);
-    let sd = if ratings.len() < 2 {
-        0.0
-    } else {
-        let raw_mean = ratings.iter().sum::<f64>() / n;
-        (ratings.iter().map(|r| (r - raw_mean).powi(2)).sum::<f64>() / n).sqrt()
-    };
-    mean - sd.max(MIN_RATING_SD)
+/// A caller's own rating scale, derived from their ratings alone.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RatingScale {
+    /// Their mean, shrunk toward [`NEUTRAL_RATING`] so a handful of ratings
+    /// stays sane.
+    pub mean: f64,
+    /// The neutral point: the shrunk mean less one standard deviation (at
+    /// least [`MIN_RATING_SD`]). Generous raters cluster high, so only a
+    /// rating clearly below their norm counts against a series; measured
+    /// from the plain mean, a generous rater's 80 read as dislike.
+    pub origin: f64,
+}
+
+impl RatingScale {
+    pub fn of(ratings: &[f64]) -> Self {
+        let n = ratings.len() as f64;
+        let mean =
+            (ratings.iter().sum::<f64>() + NEUTRAL_RATING * MEAN_SHRINKAGE) / (n + MEAN_SHRINKAGE);
+        let sd = if ratings.len() < 2 {
+            0.0
+        } else {
+            let raw_mean = ratings.iter().sum::<f64>() / n;
+            (ratings.iter().map(|r| (r - raw_mean).powi(2)).sum::<f64>() / n).sqrt()
+        };
+        Self {
+            mean,
+            origin: mean - sd.max(MIN_RATING_SD),
+        }
+    }
+
+    /// The scale of every rating in `snapshot`.
+    pub fn of_snapshot(snapshot: &LibrarySnapshot) -> Self {
+        let ratings: Vec<f64> = snapshot
+            .series
+            .iter()
+            .filter_map(|s| s.rating.map(f64::from))
+            .collect();
+        Self::of(&ratings)
+    }
+
+    /// What a rating says about how a series went, on this scale. A low
+    /// rating reads as mixed, never as dropped: finishing and rating a
+    /// series is not abandoning it.
+    pub fn outcome(&self, rating: i32) -> Outcome {
+        let rating = f64::from(rating);
+        if rating >= self.mean {
+            Outcome::Loved
+        } else if rating >= self.origin {
+            Outcome::Liked
+        } else {
+            Outcome::Mixed
+        }
+    }
 }
 
 /// How much one of the caller's series says about their taste, if anything.
@@ -611,6 +648,7 @@ mod tests {
             external_ids: Vec::new(),
             rating,
             rating_notes: None,
+            rating_updated_at: None,
         }
     }
 
@@ -704,6 +742,22 @@ mod tests {
             Some(95),
         )]));
         assert!(taste.term_weight("Fantasy") > 0.5);
+    }
+
+    #[test]
+    fn rating_scale_maps_ratings_to_outcomes_on_the_callers_own_scale() {
+        // A high rater: ratings 76..=92, mean 84.
+        let high: Vec<f64> = (0..=16).map(|i| 76.0 + f64::from(i)).collect();
+        let scale = RatingScale::of(&high);
+        assert!(scale.mean > 80.0 && scale.origin < scale.mean - 7.9);
+        assert_eq!(scale.outcome(90), Outcome::Loved);
+        assert_eq!(scale.outcome(78), Outcome::Liked);
+        assert_eq!(scale.outcome(60), Outcome::Mixed);
+        assert_eq!(scale.outcome(1), Outcome::Mixed, "never dropped");
+
+        // A low rater: the same 60 is a good score for them.
+        let low: Vec<f64> = (0..=16).map(|i| 40.0 + f64::from(i)).collect();
+        assert_eq!(RatingScale::of(&low).outcome(60), Outcome::Loved);
     }
 
     #[test]

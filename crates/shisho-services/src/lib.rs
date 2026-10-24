@@ -75,11 +75,16 @@ impl Services {
                 let snapshot = std::sync::Arc::clone(snapshot);
                 tokio::spawn(async move {
                     match reconciliation::reconcile_user(&db, &user_sub, Some(&snapshot)).await {
-                        Ok(outcome) if outcome.flagged > 0 || outcome.resolved > 0 => {
+                        Ok(outcome)
+                            if outcome.flagged > 0
+                                || outcome.resolved > 0
+                                || outcome.inferred > 0 =>
+                        {
                             tracing::info!(
                                 user_sub,
                                 flagged = outcome.flagged,
                                 resolved = outcome.resolved,
+                                inferred = outcome.inferred,
                                 "lazy reconciliation on snapshot build"
                             );
                         }

@@ -161,6 +161,10 @@ impl VerdictState {
     }
 }
 
+/// The outcome value that withdraws an earlier outcome: the series reads as
+/// open again (for instance, reading resumed after an inferred abandon).
+pub const REOPENED: &str = "reopened";
+
 /// Fold rows (insertion order) into the effective state.
 pub fn fold(rows: &[verdict::Model]) -> VerdictState {
     let mut state = VerdictState {
@@ -170,7 +174,7 @@ pub fn fold(rows: &[verdict::Model]) -> VerdictState {
     for row in rows {
         state.last_session = Some(row.session_id.clone());
         if row.outcome.is_some() {
-            state.outcome = row.outcome.clone();
+            state.outcome = row.outcome.clone().filter(|o| o != REOPENED);
             continue;
         }
         state.has_verdict = true;

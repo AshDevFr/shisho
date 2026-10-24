@@ -226,6 +226,9 @@ pub struct UserSeriesRating {
     /// 1-100 (Codex displays 1-10 with one decimal).
     pub rating: i32,
     pub notes: Option<String>,
+    /// When the rating was last set or changed.
+    #[serde(default)]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// `GET /api/v1/user/ratings` envelope (`UserRatingsListResponse`).

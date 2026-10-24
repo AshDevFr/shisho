@@ -516,3 +516,28 @@ async fn versions_are_per_user() {
         2
     );
 }
+
+#[tokio::test]
+async fn a_reopened_row_clears_the_folded_outcome() {
+    let db = fresh_db().await;
+    for r in [
+        row(&frieren(), "A", false, None, None),
+        row(&frieren(), "feedback", false, None, Some("dnf")),
+        row(
+            &frieren(),
+            "feedback",
+            false,
+            None,
+            Some(verdicts::REOPENED),
+        ),
+    ] {
+        verdicts::insert(&db, "user-1", r).await.expect("insert");
+    }
+    let rows = verdict::Entity::find().all(&db).await.unwrap();
+    let state = verdicts::fold(&rows);
+    assert_eq!(state.outcome, None);
+    assert!(
+        state.has_verdict && !state.retracted,
+        "the recommendation stands"
+    );
+}

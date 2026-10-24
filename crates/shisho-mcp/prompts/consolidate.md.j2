@@ -9,7 +9,12 @@ dislike, and are allergic to; it must stay short, current, and evidenced.
 1. Read the current profile with its evidence in one call:
    `get_profile` with `includeRecentFeedback: true`. Note the profile's
    `version` — you will propose against it. `recentFeedback` lists every
-   outcome recorded since the profile last changed.
+   outcome recorded since the profile last changed. Entries marked
+   `inferred: true` were recorded by Shisho from Codex (the user rated the
+   series after it was recommended; `notes` says what it read), so they are
+   evidence the user did not state: weigh them, and if one looks wrong ask
+   the user and record their answer with `record_feedback`, which overrides
+   it. `reopened` withdraws an earlier inferred outcome.
    `pendingReconciliation` lists recommended series the user has since
    started reading without recording an outcome: ask about each one
    ("you started X after it was recommended — how was it?") and record

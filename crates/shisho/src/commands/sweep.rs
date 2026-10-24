@@ -25,8 +25,8 @@ pub async fn reconcile(config_path: PathBuf) -> anyhow::Result<()> {
         .await
         .context("running the reconcile sweep")?;
     println!(
-        "reconcile sweep: {} known users ({} with a warm snapshot); {} flags raised, {} resolved",
-        report.users, report.with_snapshot, report.flagged, report.resolved
+        "reconcile sweep: {} known users ({} with a warm snapshot); {} flags raised, {} resolved, {} outcomes inferred",
+        report.users, report.with_snapshot, report.flagged, report.resolved, report.inferred
     );
     Ok(())
 }

@@ -34,6 +34,10 @@ struct FeedbackView {
     outcome: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     notes: Option<String>,
+    /// Shisho recorded this from Codex (a rating set after the
+    /// recommendation), not the user.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    inferred: bool,
     recorded_at: DateTime<Utc>,
 }
 
@@ -113,6 +117,8 @@ impl McpService {
             let feedback = rows
                 .into_iter()
                 .map(|row| FeedbackView {
+                    inferred: row.session_id
+                        == shisho_services::reconciliation::AUTO_FEEDBACK_SESSION,
                     id: verdict_series_token(&row),
                     outcome: row.outcome.unwrap_or_default(),
                     notes: row.notes,

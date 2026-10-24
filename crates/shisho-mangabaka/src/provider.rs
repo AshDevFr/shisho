@@ -265,6 +265,22 @@ impl MangabakaProvider {
         Ok(rows.iter().map(series_to_search_hit).collect())
     }
 
+    /// Taste-weighted discovery over the offline dump. `None` when no dump is
+    /// loaded: discovery has no API equivalent.
+    pub async fn discover(
+        &self,
+        query: &crate::offline::DiscoverQuery<'_>,
+    ) -> Result<Option<Vec<SeriesMetadata>>, MangabakaError> {
+        let Some(store) = self.current_store().await else {
+            return Ok(None);
+        };
+        store
+            .discover(query)
+            .await
+            .map(Some)
+            .map_err(MangabakaError::Store)
+    }
+
     pub async fn offline_loaded(&self) -> bool {
         self.offline.read().await.is_some()
     }

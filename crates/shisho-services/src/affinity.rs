@@ -124,6 +124,20 @@ impl TasteVector {
         self.terms.get(&term.to_lowercase()).copied().unwrap_or(0.0)
     }
 
+    /// The `n` most positively weighted terms, strongest first: what to ask
+    /// a discovery query for.
+    pub fn top_terms(&self, n: usize) -> Vec<(String, f64)> {
+        let mut liked: Vec<(String, f64)> = self
+            .terms
+            .iter()
+            .filter(|(_, w)| **w > 0.0)
+            .map(|(t, w)| (t.clone(), *w))
+            .collect();
+        liked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        liked.truncate(n);
+        liked
+    }
+
     pub fn score(&self, genres: &[String], tags: &[String]) -> Score {
         let weighted = genres
             .iter()

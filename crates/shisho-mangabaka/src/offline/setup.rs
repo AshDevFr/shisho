@@ -261,6 +261,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn side_tables_discover_ranks_by_weighted_terms_and_filters() {
+        let (_dir, store) = fixture_store().await;
+        let weights = vec![("fantasy".to_owned(), 1.0), ("Elves".to_owned(), 0.5)];
+        let query = crate::offline::DiscoverQuery {
+            weights: &weights,
+            kinds: &["manga"],
+            allow_explicit: false,
+            min_rating: 60.0,
+            limit: 10,
+        };
+        let found = store.discover(&query).await.unwrap();
+        let ids: Vec<i64> = found.iter().map(|m| m.mangabaka_id).collect();
+        // Frieren (82) and its sequel (80) carry both terms; Explicit Pick is
+        // Fantasy but pornographic.
+        assert_eq!(&ids[..2], &[112092, 112093], "{ids:?}");
+        assert!(!ids.contains(&77701), "{ids:?}");
+        assert_eq!(
+            found[0].tags,
+            vec!["Elves".to_string()],
+            "spoiler-free tags"
+        );
+
+        let explicit = store
+            .discover(&crate::offline::DiscoverQuery {
+                allow_explicit: true,
+                ..query.clone()
+            })
+            .await
+            .unwrap();
+        assert!(explicit.iter().any(|m| m.mangabaka_id == 77701));
+    }
+
+    #[tokio::test]
     async fn side_tables_link_franchise_entries_both_ways() {
         let (_dir, store) = fixture_store().await;
         let links = store.relations_for(112092).await.unwrap();

@@ -152,6 +152,76 @@ impl OfflineStore {
             .collect()
     }
 
+    /// Active series matching weighted terms, best summed weight first (then
+    /// community rating), filtered by format, content rating and a rating
+    /// floor. With no weights, the best-rated series that pass the filters.
+    /// Tags on the results come from the spoiler-free side table.
+    pub async fn discover(&self, query: &DiscoverQuery<'_>) -> anyhow::Result<Vec<SeriesMetadata>> {
+        if !self.has_table("series_terms").await? {
+            return Ok(Vec::new());
+        }
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+        let kinds = vec!["?"; query.kinds.len()].join(", ");
+        values.extend(query.kinds.iter().map(|k| (*k).into()));
+        let explicit = if query.allow_explicit {
+            String::new()
+        } else {
+            "AND COALESCE(s.content_rating, '') <> 'pornographic'".to_owned()
+        };
+        let filters = format!(
+            "(s.state = 'active' OR s.state IS NULL) AND s.type IN ({kinds}) \
+             AND CAST(s.rating AS REAL) >= ? {explicit}"
+        );
+        values.push(query.min_rating.into());
+        let cols = raw_row_columns("s.");
+        let sql = if query.weights.is_empty() {
+            values.push(i64::from(query.limit).into());
+            format!(
+                "SELECT {cols} FROM series s WHERE {filters} \
+                 ORDER BY CAST(s.rating AS REAL) DESC LIMIT ?"
+            )
+        } else {
+            let mut weights: Vec<sea_orm::Value> = Vec::new();
+            let rows = vec!["(?, ?)"; query.weights.len()].join(", ");
+            for (term, weight) in query.weights {
+                weights.push(term.clone().into());
+                weights.push((*weight).into());
+            }
+            weights.extend(values);
+            values = weights;
+            values.push(i64::from(query.limit).into());
+            format!(
+                "WITH w(term, weight) AS (VALUES {rows}) \
+                 SELECT {cols} FROM w \
+                 JOIN series_terms t ON t.term = w.term \
+                 JOIN series s ON s.id = t.series_id \
+                 WHERE {filters} \
+                 GROUP BY s.id ORDER BY SUM(w.weight) DESC, CAST(s.rating AS REAL) DESC LIMIT ?"
+            )
+        };
+        let rows = RawRow::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            sql,
+            values,
+        ))
+        .all(&self.db)
+        .await?;
+        let mut found: Vec<SeriesMetadata> = rows.into_iter().map(row_to_metadata).collect();
+
+        let ids: Vec<i64> = found.iter().map(|m| m.mangabaka_id).collect();
+        let terms = self.terms_for(&ids).await?;
+        for meta in &mut found {
+            if let Some(terms) = terms.get(&meta.mangabaka_id) {
+                meta.tags = terms
+                    .iter()
+                    .filter(|t| t.kind == "tag")
+                    .map(|t| t.term.clone())
+                    .collect();
+            }
+        }
+        Ok(found)
+    }
+
     async fn has_table(&self, name: &str) -> anyhow::Result<bool> {
         Ok(self
             .db
@@ -265,6 +335,21 @@ impl OfflineStore {
             .map(|(hit, _)| hit)
             .collect())
     }
+}
+
+/// A taste-weighted discovery query over the dump.
+#[derive(Debug, Clone)]
+pub struct DiscoverQuery<'a> {
+    /// Terms (genres or tags, case-insensitive) and their weights; only
+    /// positive weights are useful here.
+    pub weights: &'a [(String, f64)],
+    /// MangaBaka `type` values to include (`manga`, `manhwa`, ...).
+    pub kinds: &'a [&'a str],
+    /// Include pornographic-rated series.
+    pub allow_explicit: bool,
+    /// Community rating floor on MangaBaka's 0-100 scale.
+    pub min_rating: f64,
+    pub limit: u32,
 }
 
 /// One genre or tag of a dump series.

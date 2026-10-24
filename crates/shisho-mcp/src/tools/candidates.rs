@@ -14,8 +14,10 @@ use shisho_services::candidates::{self, CandidatesError, Filters, Pool};
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetCandidatesParams {
-    /// Which pool: "library" (the caller's untouched backlog, primary) or
-    /// "acquirable" (catalog series the caller does not own).
+    /// Which pool: "library" (the caller's untouched backlog, primary),
+    /// "acquirable" (Tsundoku catalog series the caller does not own, with
+    /// release coverage), or "discover" (MangaBaka series matching the
+    /// caller's taste that they do not own; works without Tsundoku).
     pub pool: Pool,
     /// Any-of genre filter, case-insensitive.
     #[serde(default)]
@@ -49,7 +51,7 @@ impl McpService {
     #[tool(
         name = "get_candidates",
         annotations(read_only_hint = true, open_world_hint = true),
-        description = "Generate recommendation candidates from one of two pools: 'library' (series the caller owns but has never read - the primary pool) or 'acquirable' (well-rated catalog series the caller does not own). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Library candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Pornographic-rated series are excluded unless 'allowExplicit' is set; 'contentRating' shows the rating of the rest. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
+        description = "Generate recommendation candidates from one of three pools: 'library' (series the caller owns but has never read - the primary pool), 'acquirable' (well-rated Tsundoku catalog series the caller does not own), or 'discover' (MangaBaka series matching the caller's taste that they do not own, manga/manhwa/manhua only). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Library and discover candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Pornographic-rated series are excluded unless 'allowExplicit' is set; 'contentRating' shows the rating of the rest. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
     )]
     async fn get_candidates(
         &self,
@@ -108,6 +110,6 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        assert_eq!(values, ["library", "acquirable"]);
+        assert_eq!(values, ["library", "acquirable", "discover"]);
     }
 }

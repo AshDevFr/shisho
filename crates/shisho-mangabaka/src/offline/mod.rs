@@ -23,7 +23,7 @@ pub mod setup;
 pub mod store;
 pub mod validate;
 
-pub use store::OfflineStore;
+pub use store::{DiscoverQuery, OfflineStore, SeriesTerm};
 
 use std::path::{Path, PathBuf};
 

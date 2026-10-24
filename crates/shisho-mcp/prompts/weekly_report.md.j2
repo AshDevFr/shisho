@@ -15,7 +15,8 @@ only this one and do it well.
 ## Workflow
 
 1. **Ground yourself.** Call `status()` first. If this week's pool is
-   unavailable, say so in the status notes and fall back to the other pool.
+   unavailable, say so in the status notes and fall back: `acquirable`
+   falls back to `discover`, and either falls back to `library`.
 2. **Read the profile and the open questions.** Call `get_profile` with
    `includeRecentFeedback: true`. List every `pendingReconciliation` entry
    in the report as an open question ("you started X after it was

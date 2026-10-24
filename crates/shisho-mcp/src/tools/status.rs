@@ -51,6 +51,7 @@ struct SweepsStatus {
 struct PoolsStatus {
     library: String,
     acquirable: String,
+    discover: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,11 +136,16 @@ impl McpService {
                 "unavailable: Codex (the required tier) is unreachable".into()
             },
             acquirable: if !health.tsundoku.configured {
-                "not configured (Tier 0: Codex-only deployment)".into()
+                "not configured (Tier 0: Codex-only deployment); use the discover pool".into()
             } else if health.tsundoku.reachable {
                 "ok".into()
             } else {
-                "degraded: Tsundoku is unreachable".into()
+                "degraded: Tsundoku is unreachable; use the discover pool".into()
+            },
+            discover: if services.metadata.provider().offline_loaded().await {
+                "ok".into()
+            } else {
+                "unavailable: the MangaBaka offline dump is not loaded".into()
             },
         };
 

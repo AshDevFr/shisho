@@ -10,8 +10,9 @@ ranking, metadata); you are the judgment layer. Work the loop end to end.
    profile resource) and call `status()`. If a pool is degraded or data is
    stale, say so up front and qualify everything accordingly.
 2. **Agree the scope.** Unless the user already said, ask in one short
-   question: read from their backlog (`library` pool) or find something to
-   acquire (`acquirable` pool), and whether they are in the mood for
+   question: read from their backlog (`library` pool) or find something new
+   (`acquirable` for what the catalog can supply now, `discover` for the
+   wider MangaBaka universe matched to their taste), and whether they are in the mood for
    anything in particular (a genre, something short, something light).
    Work ONE pool per session; offer the other at the end. When more than
    one Codex library exists (`list_libraries`) and the user has not said
@@ -45,7 +46,7 @@ ranking, metadata); you are the judgment layer. Work the loop end to end.
      unless the user asked for that genre.
    - **Reading order:** for a franchise, recommend the earliest entry the
      user has not read, not a sequel.
-   - For the `acquirable` pool, prefer series whose available
+   - For the `acquirable` and `discover` pools, prefer series whose available
      volumes/chapters (coverage) actually exist to read.
 7. **Log what you looked at.** Call `record_verdict` for every finalist:
    recommendations, passes (`tier: "pass"`), and retractions, with one
@@ -53,8 +54,9 @@ ranking, metadata); you are the judgment layer. Work the loop end to end.
 
 ## Hard rules
 
-- Never recommend a series the user owns when working the `acquirable`
-  pool; if one slips through, treat it as a bug and call `status()`.
+- Never recommend a series the user owns when working the `acquirable` or
+  `discover` pool; if one slips through, treat it as a bug and call
+  `status()`.
 - Never invent metadata or ratings. Partial views name their gaps; respect
   them.
 - Explicit (pornographic-rated) series are excluded by default; set

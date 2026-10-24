@@ -1000,3 +1000,105 @@ async fn content_rating_gate_drops_pornographic_by_default() {
     .unwrap();
     assert_eq!(opted_in.candidates.len(), 2);
 }
+
+/// Services over the fixture dump for the discover pool, for the Fantasy
+/// reader of `mount_fantasy_reader`. `owned` lists extra MangaBaka ids the
+/// reader's Codex index claims.
+async fn discover_services(owned: &[&str]) -> (MockServer, MockServer, Services) {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_fantasy_reader(&codex, &tsundoku, 0).await;
+    let index: Vec<serde_json::Value> = owned
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": format!("owned-{id}"),
+                "externalIds": [{ "id": "x", "seriesId": "x", "source": "plugin:mangabaka",
+                                  "externalId": id, "externalUrl": null }],
+            })
+        })
+        .collect();
+    let total = index.len();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/external-index"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": index, "page": 1, "pageSize": 500, "total": total, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    let http = reqwest::Client::new();
+    let services = Services::new(
+        CodexClient::new(&codex.uri(), http.clone()),
+        TsundokuClient::new(&tsundoku.uri(), Secret::new("admin-token"), http),
+        mangabaka_with_dump().await,
+        fresh_db().await,
+        &CacheConfig::default(),
+        false,
+    );
+    (codex, tsundoku, services)
+}
+
+#[tokio::test]
+async fn discover_ranks_dump_series_by_taste_within_comic_formats() {
+    let (_c, _t, services) = discover_services(&[]).await;
+    let set = get_candidates(&services, &user(), Pool::Discover, &Filters::default())
+        .await
+        .expect("discover pool");
+
+    let titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    let mut top_two = titles[..2].to_vec();
+    top_two.sort_unstable();
+    assert_eq!(
+        top_two,
+        vec!["Frieren Sequel", "Sousou no Frieren"],
+        "{titles:?}"
+    );
+    assert!(
+        !titles.contains(&"Fantasy Novel"),
+        "novels are out: {titles:?}"
+    );
+    assert!(
+        !titles.contains(&"Explicit Pick"),
+        "pornographic is out: {titles:?}"
+    );
+    assert!(
+        !titles.contains(&"Chainsaw Man"),
+        "discovery asks only for liked terms; Horror never matches: {titles:?}"
+    );
+    let top = &set.candidates[0];
+    assert_eq!(top.enrichment, Enrichment::Mangabaka);
+    assert!(top.because[0].title.starts_with("Loved Fantasy"));
+}
+
+#[tokio::test]
+async fn discover_never_returns_an_owned_series() {
+    let (_c, _t, services) = discover_services(&["112092"]).await;
+    let set = get_candidates(&services, &user(), Pool::Discover, &Filters::default())
+        .await
+        .unwrap();
+    assert!(
+        set.candidates
+            .iter()
+            .all(|c| c.mangabaka_id != Some(112092))
+    );
+    assert!(set.candidates.iter().any(|c| c.title == "Frieren Sequel"));
+}
+
+#[tokio::test]
+async fn discover_without_a_dump_names_itself_unavailable() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_fantasy_reader(&codex, &tsundoku, 0).await;
+    let err = get_candidates(
+        &services(&codex, &tsundoku, fresh_db().await),
+        &user(),
+        Pool::Discover,
+        &Filters::default(),
+    )
+    .await
+    .expect_err("no dump");
+    assert!(
+        matches!(err, CandidatesError::DiscoverUnavailable),
+        "{err:?}"
+    );
+}

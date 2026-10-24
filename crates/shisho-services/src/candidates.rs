@@ -33,7 +33,8 @@ use crate::{Services, UserCtx};
 use shisho_cache::SwrError;
 use shisho_codex::CodexError;
 use shisho_ids::{ExternalId, Provider};
-use shisho_mangabaka::ContentRating;
+use shisho_mangabaka::offline::DiscoverQuery;
+use shisho_mangabaka::{ContentRating, SeriesMetadata};
 use shisho_tsundoku::{CoverageSpan, Order, SeriesDetail, SeriesListQuery, TsundokuError};
 
 /// Default over-provision target (PRD: 30-50).
@@ -50,6 +51,18 @@ const MAX_EXAMINED_FACTOR: usize = 8;
 const DESCRIPTION_CHARS: usize = 280;
 /// Tags shipped per candidate.
 const MAX_TAGS: usize = 8;
+/// Discover pool: comic formats in scope (novels are out).
+const DISCOVER_KINDS: &[&str] = &["manga", "manhwa", "manhua"];
+/// Discover pool: community rating floor on MangaBaka's 0-100 scale, so
+/// obscure, barely rated series do not crowd the list.
+const DISCOVER_MIN_RATING: f64 = 65.0;
+/// Discover pool: the caller's strongest liked terms sent to the dump query.
+const DISCOVER_QUERY_TERMS: usize = 30;
+/// Discover pool: rows fetched per wanted candidate, and the absolute cap.
+const DISCOVER_OVERFETCH: usize = 4;
+const DISCOVER_MAX_FETCH: usize = 500;
+/// Discover pool: weight of the community rating (0-10) in the final score.
+const DISCOVER_RATING_PRIOR: f64 = 0.05;
 /// Backend calls in flight per pool while enriching candidates.
 const FAN_OUT: usize = 8;
 
@@ -69,6 +82,8 @@ pub enum Pool {
     Library,
     // Tsundoku's catalog minus everything the caller owns (Tier 1).
     Acquirable,
+    // MangaBaka dump series matching the caller's taste, minus owned.
+    Discover,
 }
 
 impl Pool {
@@ -76,6 +91,7 @@ impl Pool {
         match self {
             Pool::Library => "library",
             Pool::Acquirable => "acquirable",
+            Pool::Discover => "discover",
         }
     }
 }
@@ -235,10 +251,18 @@ pub enum CandidatesError {
     },
     /// The acquirable pool is catalog-wide; a library scope is a mistake.
     #[error(
-        "the acquirable pool is not scoped by Codex libraries (it is the catalog minus \
-         everything you own); omit `libraries` for pool=acquirable"
+        "the {pool} pool is not scoped by Codex libraries (it draws from outside your \
+         library and excludes everything you own); omit `libraries` for pool={pool}"
     )]
-    LibrariesNotApplicable,
+    LibrariesNotApplicable { pool: &'static str },
+    /// The discover pool reads the MangaBaka offline dump, which this
+    /// instance has not loaded (API-only mode, or the first refresh is
+    /// still running).
+    #[error(
+        "the discover pool needs the MangaBaka offline dump, which is not loaded; \
+         use pool=library or pool=acquirable"
+    )]
+    DiscoverUnavailable,
     #[error("verdict query failed")]
     Db(#[from] sea_orm::DbErr),
 }
@@ -252,6 +276,7 @@ pub async fn get_candidates(
     match pool {
         Pool::Library => library_pool(services, user, filters).await,
         Pool::Acquirable => acquirable_pool(services, user, filters).await,
+        Pool::Discover => discover_pool(services, user, filters).await,
     }
 }
 
@@ -390,7 +415,9 @@ async fn acquirable_pool(
     filters: &Filters,
 ) -> Result<CandidateSet, CandidatesError> {
     if !filters.libraries.is_empty() {
-        return Err(CandidatesError::LibrariesNotApplicable);
+        return Err(CandidatesError::LibrariesNotApplicable {
+            pool: Pool::Acquirable.name(),
+        });
     }
     // The acquirable pool needs the caller's owned set only (no read-state), so
     // it uses the slim cached Codex index rather than the full library snapshot:
@@ -486,6 +513,165 @@ async fn acquirable_pool(
         },
         truncated,
     })
+}
+
+/// The discover pool: MangaBaka dump series in the comic formats, ranked by
+/// the caller's taste and anti-joined against everything they own. Needs no
+/// Tsundoku; where Tsundoku has a series, its id and coverage are attached.
+async fn discover_pool(
+    services: &Services,
+    user: &UserCtx,
+    filters: &Filters,
+) -> Result<CandidateSet, CandidatesError> {
+    if !filters.libraries.is_empty() {
+        return Err(CandidatesError::LibrariesNotApplicable {
+            pool: Pool::Discover.name(),
+        });
+    }
+    if !services.metadata.provider().offline_loaded().await {
+        return Err(CandidatesError::DiscoverUnavailable);
+    }
+    let snapshot_hit = services
+        .snapshots
+        .get(&user.user_sub, &user.credential)
+        .await
+        .map_err(CandidatesError::Codex)?;
+    let index_hit = services
+        .snapshots
+        .external_index(&user.user_sub, &user.credential)
+        .await
+        .map_err(CandidatesError::Codex)?;
+    let owned_index = index_hit.value;
+    let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
+    let taste = TasteVector::from_snapshot(&snapshot_hit.value);
+
+    let limit = filters.limit();
+    let offset = filters.offset.unwrap_or(0);
+    // Over-fetch: owned, verdicted and filtered-out rows fall away below.
+    let fetch = ((offset + limit) * DISCOVER_OVERFETCH).min(DISCOVER_MAX_FETCH);
+    let weights = taste.top_terms(DISCOVER_QUERY_TERMS);
+    let query = DiscoverQuery {
+        weights: &weights,
+        kinds: DISCOVER_KINDS,
+        allow_explicit: filters.allow_explicit,
+        min_rating: DISCOVER_MIN_RATING,
+        limit: u32::try_from(fetch).unwrap_or(u32::MAX),
+    };
+    let found = match services.metadata.provider().discover(&query).await {
+        Ok(Some(found)) => found,
+        Ok(None) => return Err(CandidatesError::DiscoverUnavailable),
+        Err(err) => {
+            tracing::warn!(error = %err, "dump discovery failed");
+            return Err(CandidatesError::DiscoverUnavailable);
+        }
+    };
+
+    let mut scored: Vec<(f64, Candidate)> = Vec::new();
+    for meta in found {
+        let mut ids = vec![ExternalId {
+            provider: Provider::Mangabaka,
+            id: meta.mangabaka_id.to_string(),
+            provenance: None,
+        }];
+        ids.extend(meta.foreign_ids.iter().cloned());
+        if ids
+            .iter()
+            .any(|id| owned_index.contains_key(&id.canonical_key()))
+            || verdicts.excludes(&ids)
+        {
+            continue;
+        }
+        let candidate = dump_candidate(&meta, &ids);
+        if filters.gates_out(&candidate)
+            || !filters.matches(
+                &candidate.genres,
+                &candidate.tags,
+                candidate.status.as_deref(),
+            )
+        {
+            continue;
+        }
+        let score = taste.score(&candidate.genres, &candidate.tags);
+        // A small community-rating prior separates equally matching series.
+        let total = score.affinity + DISCOVER_RATING_PRIOR * candidate.rating.unwrap_or(0.0) / 10.0;
+        let mut candidate = candidate;
+        candidate.score = Some(round3(total));
+        candidate.because = score.anchors;
+        scored.push((total, candidate));
+    }
+    // Stable: ties keep the dump's own order (summed weight, then rating).
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let truncated = scored.len() > offset + limit;
+    let mut candidates: Vec<Candidate> = scored
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .map(|(_, c)| c)
+        .collect();
+
+    let mut tsundoku_as_of = None;
+    let tokens: Vec<String> = candidates
+        .iter()
+        .flat_map(|c| c.external_ids.iter().cloned())
+        .collect();
+    match services.tsundoku.resolve_external_ids(&tokens).await {
+        Ok(resolved) if !resolved.is_empty() => {
+            tsundoku_as_of = Some(Utc::now());
+            for candidate in &mut candidates {
+                if let Some(hit) = candidate
+                    .external_ids
+                    .iter()
+                    .find_map(|id| resolved.get(id))
+                {
+                    candidate.tsundoku_series_id = Some(hit.series_id);
+                    candidate.volume_coverage = hit.volume_coverage.clone();
+                    candidate.chapter_coverage = hit.chapter_coverage.clone();
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(err) => {
+            tracing::debug!(error = %err, "Tsundoku resolution failed; discover candidates ship without coverage");
+        }
+    }
+    for candidate in &mut candidates {
+        compact(candidate, Some(&taste));
+    }
+
+    Ok(CandidateSet {
+        pool: Pool::Discover,
+        candidates,
+        as_of: AsOf {
+            library: Some(snapshot_hit.as_of),
+            tsundoku: tsundoku_as_of,
+        },
+        truncated,
+    })
+}
+
+/// A discover-pool candidate straight from the backbone.
+fn dump_candidate(meta: &SeriesMetadata, ids: &[ExternalId]) -> Candidate {
+    Candidate {
+        title: meta.title.clone(),
+        codex_series_id: None,
+        library: None,
+        tsundoku_series_id: None,
+        mangabaka_id: Some(meta.mangabaka_id),
+        external_ids: union_canonical(ids.iter()),
+        genres: meta.genres.clone(),
+        tags: meta.tags.clone(),
+        rating: meta.rating,
+        description: meta.description.clone(),
+        status: meta.status.map(|s| s.as_str().to_owned()),
+        year: meta.year,
+        content_rating: meta.content_rating.map(|r| r.as_str().to_owned()),
+        authors: meta.authors.clone(),
+        volume_coverage: Vec::new(),
+        chapter_coverage: Vec::new(),
+        enrichment: Enrichment::Mangabaka,
+        score: None,
+        because: Vec::new(),
+    }
 }
 
 /// One backlog series as a candidate: Tsundoku-enriched where it resolves,
@@ -883,6 +1069,6 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        assert_eq!(values, ["library", "acquirable"]);
+        assert_eq!(values, ["library", "acquirable", "discover"]);
     }
 }

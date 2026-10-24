@@ -13,6 +13,7 @@
 //!   no summary — exercises description backfill from the dump)
 //! - `112093` Frieren Sequel (prequel 112092), for franchise links and
 //!   structured tags
+//! - `88801` Fantasy Novel (type novel, outside the discover formats)
 //! - `77701` Explicit Pick (pornographic) and `77702` Erotica Pick
 //!   (erotica), for the default content gate
 
@@ -116,6 +117,14 @@ pub async fn write_dump_fixture(dump_dir: &Path) -> anyhow::Result<()> {
             112093, 'Frieren Sequel', 'manga', 'releasing', 2025, 80.0,
             'The journey continues.', 'active', '[\"Fantasy\"]', '[]', 'safe',
             '[{\"name\": \"Elves\", \"is_spoiler\": false}]', '[112092]'
+        )",
+        // A Fantasy novel: outside the discover pool's comic formats.
+        "INSERT INTO series (
+            id, title, type, status, year, rating, description, state, genres, tags,
+            content_rating
+        ) VALUES (
+            88801, 'Fantasy Novel', 'novel', 'completed', 2017, 90.0,
+            'A light novel.', 'active', '[\"Fantasy\"]', '[]', 'safe'
         )",
         // Explicitness fixtures for the content gate: one pornographic and one
         // erotica series, both unowned acquirable picks.

@@ -1,7 +1,10 @@
-use utoipa::OpenApi;
+use axum::http::StatusCode;
+use utoipa::openapi::RefOr;
+use utoipa::{Modify, OpenApi};
 
 #[derive(OpenApi)]
 #[openapi(
+    modifiers(&DefaultResponseDescriptions),
     info(title = "shisho API", version = env!("CARGO_PKG_VERSION")),
     paths(
         super::health::health,
@@ -73,3 +76,61 @@ use utoipa::OpenApi;
     )
 )]
 pub struct ApiDoc;
+
+/// OpenAPI requires every response to carry a `description`, and utoipa omits
+/// the field when an annotation gives none (which is most of ours). Fill the
+/// gaps with the status code's reason phrase so the spec stays valid.
+struct DefaultResponseDescriptions;
+
+impl Modify for DefaultResponseDescriptions {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        for item in openapi.paths.paths.values_mut() {
+            let operations = [
+                &mut item.get,
+                &mut item.put,
+                &mut item.post,
+                &mut item.delete,
+                &mut item.options,
+                &mut item.head,
+                &mut item.patch,
+                &mut item.trace,
+            ];
+            for op in operations.into_iter().flatten() {
+                for (status, response) in op.responses.responses.iter_mut() {
+                    if let RefOr::T(response) = response
+                        && response.description.is_empty()
+                    {
+                        response.description = status
+                            .parse::<u16>()
+                            .ok()
+                            .and_then(|code| StatusCode::from_u16(code).ok())
+                            .and_then(|code| code.canonical_reason())
+                            .unwrap_or("Response")
+                            .to_string();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_response_has_a_description() {
+        let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        for (path, item) in spec["paths"].as_object().unwrap() {
+            for (method, op) in item.as_object().unwrap() {
+                for (status, response) in op["responses"].as_object().unwrap() {
+                    let description = response["description"].as_str().unwrap_or_default();
+                    assert!(
+                        !description.is_empty(),
+                        "{method} {path} {status} has no description"
+                    );
+                }
+            }
+        }
+    }
+}

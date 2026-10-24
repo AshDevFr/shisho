@@ -612,7 +612,7 @@ export interface components {
         ProfileResponse: {
             /** @description The current profile content (Markdown). Empty for a version-0 profile. */
             content: string;
-            pendingProposal?: null | components["schemas"]["PendingProposalDto"];
+            pendingProposal?: components["schemas"]["PendingProposalDto"] | null;
             /** @description When the current version was applied (ISO 8601), absent at version 0. */
             updatedAt?: string | null;
             /** Format: int64 */
@@ -656,7 +656,7 @@ export interface components {
              *     `status` tool and the health probe).
              */
             health: components["schemas"]["HealthResponse"];
-            library?: null | components["schemas"]["LibraryStatus"];
+            library?: components["schemas"]["LibraryStatus"] | null;
             /** @description The caller's minted Codex key state. */
             mintedKey: components["schemas"]["MintedKeyStatus"];
         };

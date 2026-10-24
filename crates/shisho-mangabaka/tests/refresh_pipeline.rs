@@ -21,7 +21,7 @@ async fn build_dump_sqlite(path: &std::path::Path) {
     let url = format!("sqlite://{}?mode=rwc", path.display());
     let db = Database::connect(&url).await.unwrap();
     let backend = db.get_database_backend();
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         backend,
         "CREATE TABLE series (
             id INTEGER PRIMARY KEY,
@@ -56,7 +56,7 @@ async fn build_dump_sqlite(path: &std::path::Path) {
     ))
     .await
     .unwrap();
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         backend,
         "INSERT INTO series (
             id, title, native_title, type, status, year, final_volume, total_chapters,
@@ -69,7 +69,7 @@ async fn build_dump_sqlite(path: &std::path::Path) {
     ))
     .await
     .unwrap();
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         backend,
         format!(
             "INSERT INTO series (id, title, state)
@@ -265,13 +265,13 @@ async fn undersized_dump_is_refused_before_promotion() {
     let db = Database::connect(format!("sqlite://{}?mode=rwc", small.display()))
         .await
         .unwrap();
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         db.get_database_backend(),
         "CREATE TABLE series (id INTEGER PRIMARY KEY, title TEXT, state TEXT)".to_string(),
     ))
     .await
     .unwrap();
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         db.get_database_backend(),
         "INSERT INTO series (id, title, state) VALUES (1, 'Lonely Row', 'active')".to_string(),
     ))

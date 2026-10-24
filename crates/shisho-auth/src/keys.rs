@@ -28,7 +28,8 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::TryRng;
@@ -322,9 +323,8 @@ pub fn hash_key(key: &str) -> anyhow::Result<String> {
     SysRng
         .try_fill_bytes(&mut salt_bytes)
         .map_err(|e| anyhow!("OS RNG unavailable: {e}"))?;
-    let salt = SaltString::encode_b64(&salt_bytes).map_err(|e| anyhow!("encoding salt: {e}"))?;
     Ok(Argon2::default()
-        .hash_password(key.as_bytes(), &salt)
+        .hash_password_with_salt(key.as_bytes(), &salt_bytes)
         .map_err(|e| anyhow!("hashing key: {e}"))?
         .to_string())
 }
@@ -346,6 +346,16 @@ mod tests {
     use super::*;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
+    /// Stored key hashes outlive argon2 crate upgrades: a standard PHC
+    /// string produced elsewhere (here the reference `argon2` CLI) must keep
+    /// verifying, or every existing API key stops working.
+    #[test]
+    fn verifies_externally_produced_phc_hash() {
+        let hash = "$argon2id$v=19$m=16384,t=2,p=1$Qm9DSUJBTzk0dGU2WXVjUQ$CjaeFJDSP0YRvGpg3X0eZMmP7m+cqdGaFo3zXjggh/U";
+        assert!(verify_key("shk_testkey", hash));
+        assert!(!verify_key("shk_wrongkey", hash));
+    }
 
     #[test]
     fn generated_key_has_prefix_and_entropy() {

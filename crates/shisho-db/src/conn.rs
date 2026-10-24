@@ -54,14 +54,15 @@ pub async fn connect(cfg: &AppConfig, dek: Option<&Dek>) -> anyhow::Result<Datab
         use sea_orm::{ConnectionTrait, Statement};
         let backend = db.get_database_backend();
         for pragma in ["PRAGMA journal_mode=WAL;", "PRAGMA foreign_keys=ON;"] {
-            db.execute(Statement::from_string(backend, pragma)).await?;
+            db.execute_raw(Statement::from_string(backend, pragma))
+                .await?;
         }
 
         // A keyed open must land on a real SQLCipher build with the key applied;
         // otherwise we would be writing plaintext where ciphertext is expected.
         if dek.is_some() {
             let cipher_version: String = db
-                .query_one(Statement::from_string(backend, "PRAGMA cipher_version;"))
+                .query_one_raw(Statement::from_string(backend, "PRAGMA cipher_version;"))
                 .await?
                 .context("PRAGMA cipher_version returned no row (SQLCipher not linked?)")?
                 .try_get_by_index(0)?;
@@ -207,10 +208,10 @@ mod tests {
         {
             let db = connect(&cfg_with_url(&url), Some(&dek)).await.unwrap();
             let backend = db.get_database_backend();
-            db.execute(Statement::from_string(backend, "CREATE TABLE t(x TEXT);"))
+            db.execute_raw(Statement::from_string(backend, "CREATE TABLE t(x TEXT);"))
                 .await
                 .unwrap();
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 "INSERT INTO t(x) VALUES('secret');",
             ))
@@ -231,7 +232,7 @@ mod tests {
             let db = connect(&cfg_with_url(&url), Some(&dek)).await.unwrap();
             let backend = db.get_database_backend();
             let x: String = db
-                .query_one(Statement::from_string(backend, "SELECT x FROM t;"))
+                .query_one_raw(Statement::from_string(backend, "SELECT x FROM t;"))
                 .await
                 .unwrap()
                 .unwrap()

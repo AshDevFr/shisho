@@ -52,7 +52,7 @@ pub async fn prepare(dump_path: impl AsRef<Path>) -> Result<()> {
         backend,
         "SELECT name FROM sqlite_master WHERE type='table' AND name='series_title_fts'".to_string(),
     );
-    if db.query_one(fts_check).await?.is_some() {
+    if db.query_one_raw(fts_check).await?.is_some() {
         tracing::debug!("dump already prepared; skipping setup");
         return Ok(());
     }
@@ -60,7 +60,7 @@ pub async fn prepare(dump_path: impl AsRef<Path>) -> Result<()> {
     tracing::info!("preparing dump (indexes + FTS5); may take a few minutes");
 
     for stmt in INDEXES {
-        db.execute(Statement::from_string(backend, (*stmt).to_string()))
+        db.execute_raw(Statement::from_string(backend, (*stmt).to_string()))
             .await
             .with_context(|| format!("creating index via {stmt}"))?;
     }
@@ -68,7 +68,7 @@ pub async fn prepare(dump_path: impl AsRef<Path>) -> Result<()> {
     // Contentless FTS5: the dump stays unchanged, FTS5 stores only the
     // tokens. tokenize='unicode61 remove_diacritics 2' folds Latin
     // diacritics so accented romanizations match the bare ASCII query.
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         backend,
         "CREATE VIRTUAL TABLE series_title_fts USING fts5(
             title,
@@ -86,7 +86,7 @@ pub async fn prepare(dump_path: impl AsRef<Path>) -> Result<()> {
     // `{title, language, traits, is_primary, note}`. We extract every
     // contained title (excluding the canonical title to avoid duplicate
     // tokens) and stuff the lot into the `alternate_titles` FTS column.
-    db.execute(Statement::from_string(
+    db.execute_raw(Statement::from_string(
         backend,
         "INSERT INTO series_title_fts(rowid, title, native_title, romanized_title, alternate_titles)
          SELECT
@@ -125,7 +125,7 @@ mod tests {
         let url = format!("sqlite://{}?mode=rwc", path.display());
         let db = Database::connect(&url).await.unwrap();
         let backend = db.get_database_backend();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "CREATE TABLE series (
                 id INTEGER PRIMARY KEY,
@@ -146,7 +146,7 @@ mod tests {
         ))
         .await
         .unwrap();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series (id, title, native_title, titles, state, source_anilist_id, source_manga_updates_id)
              VALUES (1, 'Berserk', 'ベルセルク', '[{\"title\":\"Berserk: Black Swordsman\"}]', 'active', 33, 'berserk-1')"
@@ -154,7 +154,7 @@ mod tests {
         ))
         .await
         .unwrap();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series (id, title, state) VALUES (2, 'Merged Row', 'merged')".to_string(),
         ))
@@ -178,7 +178,7 @@ mod tests {
 
         // FTS5 finds the canonical title.
         let rows = db
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 backend,
                 "SELECT rowid FROM series_title_fts WHERE series_title_fts MATCH ?1",
                 ["\"Berserk\"".into()],
@@ -189,7 +189,7 @@ mod tests {
 
         // FTS5 finds an alternate title from the titles JSON array.
         let rows = db
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 backend,
                 "SELECT rowid FROM series_title_fts WHERE series_title_fts MATCH ?1",
                 ["\"Swordsman\"".into()],
@@ -200,7 +200,7 @@ mod tests {
 
         // Merged row excluded.
         let rows = db
-            .query_all(Statement::from_sql_and_values(
+            .query_all_raw(Statement::from_sql_and_values(
                 backend,
                 "SELECT rowid FROM series_title_fts WHERE series_title_fts MATCH ?1",
                 ["\"Merged\"".into()],

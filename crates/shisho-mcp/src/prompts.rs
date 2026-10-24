@@ -14,7 +14,8 @@
 
 use std::sync::LazyLock;
 
-use minijinja::{Environment, UndefinedBehavior, Value};
+use minijinja::value::Serde;
+use minijinja::{Environment, UndefinedBehavior};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{PromptMessage, Role};
 use rmcp::{ErrorData, prompt, prompt_router};
@@ -79,7 +80,7 @@ pub fn render(template: &str, ctx: impl Serialize) -> Result<String, PromptError
     let tmpl = ENV
         .get_template(template)
         .map_err(|_| PromptError::Unknown(template.to_owned()))?;
-    tmpl.render(Value::from_serialize(&ctx))
+    tmpl.render(Serde(&ctx))
         .map_err(|source| PromptError::Render {
             template: template.to_owned(),
             source,

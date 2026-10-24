@@ -95,7 +95,7 @@ pub async fn write_dump_fixture(dump_dir: &Path) -> anyhow::Result<()> {
         )",
     ];
     for stmt in statements {
-        db.execute(Statement::from_string(backend, stmt.to_string()))
+        db.execute_raw(Statement::from_string(backend, stmt.to_string()))
             .await
             .context("seeding fixture dump")?;
     }

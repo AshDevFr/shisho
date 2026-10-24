@@ -42,7 +42,7 @@ pub fn attach(app: Router, state: Arc<AppState>, ct: CancellationToken) -> Route
         },
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
-            .with_stateful_mode(false)
+            .with_legacy_session_mode(false)
             .with_cancellation_token(ct)
             // rmcp's default Host allowlist is loopback-only (DNS-rebinding
             // protection for unauthenticated local servers). This server is
@@ -113,7 +113,10 @@ mod tests {
         let client = http_client(&base, ADMIN_KEY).await;
 
         let info = client.peer_info().expect("server info");
-        assert_eq!(info.server_info.name, "shisho");
+        assert_eq!(
+            info.server_info.as_ref().expect("server_info").name,
+            "shisho"
+        );
 
         let tools = client.list_tools(Default::default()).await.unwrap();
         assert_eq!(tools.tools.len(), 9);

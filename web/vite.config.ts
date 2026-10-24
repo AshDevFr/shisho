@@ -9,7 +9,7 @@ const apiUrl = process.env.VITE_API_URL ?? "http://localhost:8080";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },
   server: {
     port: 5173,

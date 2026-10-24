@@ -13,9 +13,9 @@ use rmcp::handler::server::router::prompt::PromptRouter;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Implementation, ListResourcesResult, ListToolsResult,
-    PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult, ServerCapabilities,
-    ServerInfo,
+    CallToolRequestParams, CallToolResponse, Implementation, ListResourcesResult, ListToolsResult,
+    PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse, ServerCapabilities,
+    ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, prompt_handler};
@@ -159,8 +159,8 @@ pub(crate) fn required_scope(tool: &str) -> Option<Scope> {
 
 #[prompt_handler(router = self.prompt_router)]
 impl ServerHandler for McpService {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_prompts()
@@ -183,8 +183,8 @@ impl ServerHandler for McpService {
         &self,
         request: ReadResourceRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
-        resources::read(self, &request, &context).await
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        Ok(resources::read(self, &request, &context).await?.into())
     }
 
     async fn list_tools(
@@ -192,18 +192,14 @@ impl ServerHandler for McpService {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
-            tools: self.tool_router.list_all(),
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListToolsResult::with_all_items(self.tool_router.list_all()))
     }
 
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         mut context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         let auth = self.auth_context(&context)?;
         let required = required_scope(&request.name).ok_or_else(|| {
             ErrorData::invalid_params(format!("unknown tool {:?}", request.name), None)
@@ -282,8 +278,14 @@ mod tests {
     async fn initialize_reports_binary_metadata() {
         let client = admin_client().await;
         let info = client.peer_info().expect("server info after initialize");
-        assert_eq!(info.server_info.name, "shisho");
-        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            info.server_info.as_ref().expect("server_info").name,
+            "shisho"
+        );
+        assert_eq!(
+            info.server_info.as_ref().expect("server_info").version,
+            env!("CARGO_PKG_VERSION")
+        );
         assert!(info.capabilities.tools.is_some(), "tools capability");
         assert!(
             !info.instructions.as_deref().unwrap_or("").is_empty(),

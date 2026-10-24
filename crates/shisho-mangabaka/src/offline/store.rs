@@ -65,7 +65,7 @@ impl OfflineStore {
     pub async fn count_active_rows(&self) -> anyhow::Result<u64> {
         let row = self
             .db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 self.db.get_database_backend(),
                 "SELECT COUNT(*) AS n FROM series WHERE state = 'active' OR state IS NULL"
                     .to_string(),
@@ -436,7 +436,7 @@ mod tests {
     async fn fixture_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:").await.unwrap();
         let backend = db.get_database_backend();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "CREATE TABLE series (
                 id INTEGER PRIMARY KEY,
@@ -472,7 +472,7 @@ mod tests {
         .await
         .unwrap();
         // Chainsaw Man (active) and a merged duplicate to exercise filtering.
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series (
                 id, title, native_title, romanized_title, titles, type, status, year,
@@ -492,7 +492,7 @@ mod tests {
         ))
         .await
         .unwrap();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series (
                 id, title, type, state, source_anilist_id
@@ -504,7 +504,7 @@ mod tests {
         .await
         .unwrap();
         // FTS5 virtual table mirroring what setup::prepare builds.
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "CREATE VIRTUAL TABLE series_title_fts USING fts5(
                 title, native_title, romanized_title, alternate_titles, tokenize = 'unicode61'
@@ -513,7 +513,7 @@ mod tests {
         ))
         .await
         .unwrap();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series_title_fts(rowid, title, native_title, romanized_title, alternate_titles)
                 VALUES (1677, 'Chainsaw Man', 'チェンソーマン', 'Chainsaw Man', 'Chainsaw-Man CSM')"
@@ -668,7 +668,7 @@ mod tests {
     async fn search_fts_reranks_candidates_by_dice() {
         let db = fixture_db().await;
         let backend = db.get_database_backend();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series (
                 id, title, type, state, source_anilist_id
@@ -679,7 +679,7 @@ mod tests {
         ))
         .await
         .unwrap();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "INSERT INTO series_title_fts(rowid, title, native_title, romanized_title, alternate_titles)
                 VALUES (42, 'Chainsaw Man: Buddy Stories', '', '', '')"

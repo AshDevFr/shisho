@@ -48,7 +48,7 @@ async fn validate_with_floor(path: impl AsRef<Path>, min_rows: i64) -> Result<()
     // A corrupt header or a missing `series` table surfaces as a query error
     // here, which is exactly the signal we want.
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             backend,
             "SELECT COUNT(*) AS n FROM series".to_string(),
         ))
@@ -80,14 +80,14 @@ mod tests {
         let url = format!("sqlite://{}?mode=rwc", path.display());
         let db = Database::connect(&url).await.unwrap();
         let backend = db.get_database_backend();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             backend,
             "CREATE TABLE series (id INTEGER PRIMARY KEY, title TEXT)".to_string(),
         ))
         .await
         .unwrap();
         for i in 1..=rows {
-            db.execute(Statement::from_string(
+            db.execute_raw(Statement::from_string(
                 backend,
                 format!("INSERT INTO series (id, title) VALUES ({i}, 'row {i}')"),
             ))
@@ -124,7 +124,7 @@ mod tests {
         let db = Database::connect(format!("sqlite://{}?mode=rwc", path.display()))
             .await
             .unwrap();
-        db.execute(Statement::from_string(
+        db.execute_raw(Statement::from_string(
             db.get_database_backend(),
             "CREATE TABLE other (id INTEGER PRIMARY KEY)".to_string(),
         ))

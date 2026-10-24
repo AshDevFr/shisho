@@ -20,7 +20,7 @@
 //! repo API for out-of-band administration).
 
 use chrono::{DateTime, Utc};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
     EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
@@ -338,7 +338,10 @@ async fn next_version<C: ConnectionTrait>(
     let max_version: Option<i64> = profile_version::Entity::find()
         .filter(profile_version::Column::UserSub.eq(user_sub))
         .select_only()
-        .column_as(Expr::col(profile_version::Column::Version).max(), "max")
+        .column_as(
+            Expr::from(Func::max(Expr::col(profile_version::Column::Version))),
+            "max",
+        )
         .into_tuple()
         .one(conn)
         .await?

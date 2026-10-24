@@ -23,7 +23,7 @@
         "operationId": "encryption_status",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -33,7 +33,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -69,7 +69,7 @@
         "operationId": "list_users",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -82,7 +82,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -129,10 +129,10 @@
         ],
         "responses": {
           "204": {
-            "description": ""
+            "description": "No Content"
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -142,7 +142,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -152,7 +152,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -189,7 +189,7 @@
         ],
         "responses": {
           "204": {
-            "description": ""
+            "description": "No Content"
           },
           "400": {
             "description": "Cannot deactivate yourself",
@@ -202,7 +202,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -212,7 +212,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -222,7 +222,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -248,7 +248,7 @@
         "operationId": "list_connections",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -261,7 +261,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -271,7 +271,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -308,10 +308,10 @@
         ],
         "responses": {
           "204": {
-            "description": ""
+            "description": "No Content"
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -321,7 +321,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -331,7 +331,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -357,7 +357,7 @@
         "operationId": "health",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -388,7 +388,7 @@
         "operationId": "info",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -409,7 +409,7 @@
         "operationId": "list_keys",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -422,7 +422,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -432,7 +432,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -466,7 +466,7 @@
         },
         "responses": {
           "201": {
-            "description": "",
+            "description": "Created",
             "content": {
               "application/json": {
                 "schema": {
@@ -486,7 +486,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -496,7 +496,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -533,10 +533,10 @@
         ],
         "responses": {
           "204": {
-            "description": ""
+            "description": "No Content"
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -546,7 +546,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -556,7 +556,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -582,7 +582,7 @@
         "operationId": "get_profile",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -592,7 +592,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -602,7 +602,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -612,7 +612,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -646,7 +646,7 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -656,7 +656,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -666,7 +666,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -676,7 +676,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -714,7 +714,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -724,7 +724,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -734,7 +734,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -744,7 +744,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -754,7 +754,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -792,10 +792,10 @@
         ],
         "responses": {
           "204": {
-            "description": ""
+            "description": "No Content"
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -805,7 +805,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -815,7 +815,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -825,7 +825,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -851,13 +851,13 @@
         "operationId": "get_profile_raw",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "text/markdown": {}
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -867,7 +867,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -877,7 +877,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -903,7 +903,7 @@
         "operationId": "list_versions",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -916,7 +916,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -926,7 +926,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -936,7 +936,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -973,7 +973,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -1015,7 +1015,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -1056,7 +1056,7 @@
         "operationId": "get_status",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -1066,7 +1066,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -1076,7 +1076,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -1086,7 +1086,7 @@
             }
           },
           "503": {
-            "description": "",
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -1112,10 +1112,10 @@
         "operationId": "trigger_dump_refresh",
         "responses": {
           "202": {
-            "description": ""
+            "description": "Accepted"
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -1125,7 +1125,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -1135,7 +1135,7 @@
             }
           },
           "503": {
-            "description": "",
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -1211,7 +1211,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -1224,7 +1224,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -1234,7 +1234,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -1244,7 +1244,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -1292,7 +1292,7 @@
         },
         "responses": {
           "201": {
-            "description": "",
+            "description": "Created",
             "content": {
               "application/json": {
                 "schema": {
@@ -1302,7 +1302,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -1312,7 +1312,7 @@
             }
           },
           "403": {
-            "description": "",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -1322,7 +1322,7 @@
             }
           },
           "404": {
-            "description": "",
+            "description": "Not Found",
             "content": {
               "application/json": {
                 "schema": {
@@ -1332,7 +1332,7 @@
             }
           },
           "409": {
-            "description": "",
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -1358,7 +1358,7 @@
         "operationId": "whoami",
         "responses": {
           "200": {
-            "description": "",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -1368,7 +1368,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -1935,11 +1935,11 @@
           "pendingProposal": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/PendingProposalDto",
                 "description": "A consolidation proposal awaiting the user's approval, if one is pending."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -2063,11 +2063,11 @@
           "library": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LibraryStatus",
                 "description": "The caller's library snapshot view, when a warm snapshot exists (built on\ntheir last authenticated touch). Absent when none is cached — no Codex\ncall is made from this browser session."
+              },
+              {
+                "type": "null"
               }
             ]
           },

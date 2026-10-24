@@ -45,6 +45,6 @@ console.error = (...args: unknown[]) => {
 };
 
 // MSW: intercept API calls for the whole test run.
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+beforeAll(() => server.listen({ onUnhandledFrame: "bypass" }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());

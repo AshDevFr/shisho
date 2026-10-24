@@ -4,8 +4,7 @@
     "title": "shisho API",
     "description": "HTTP API, OpenAPI doc, and embedded SPA for shisho",
     "contact": {
-      "name": "AshDevFr",
-      "email": "7372540+AshDevFr@users.noreply.github.com"
+      "name": "AshDevFr"
     },
     "license": {
       "name": "MIT OR Apache-2.0",

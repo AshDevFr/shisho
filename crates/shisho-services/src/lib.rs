@@ -14,6 +14,7 @@ pub mod read_state;
 pub mod reconciliation;
 pub mod sweeps;
 pub mod tsundoku_cache;
+pub mod verdict_views;
 pub mod verdicts;
 
 use std::sync::Arc;

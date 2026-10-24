@@ -288,12 +288,12 @@ pub async fn lookup(
 /// the write tools use to pin a verdict's identity.
 pub fn parse_known_id(input: &str) -> Option<ExternalId> {
     if let Ok(id) = ExternalId::from_codex(input)
-        && !matches!(id.provider, Provider::Other(_))
+        && id.is_known()
     {
         return Some(id);
     }
     if let Ok(id) = ExternalId::from_tsundoku(input)
-        && !matches!(id.provider, Provider::Other(_))
+        && id.is_known()
     {
         return Some(id);
     }
@@ -411,19 +411,15 @@ async fn tsundoku_view(
     services: &Services,
     id: &ExternalId,
 ) -> Result<Option<(TsundokuView, Vec<ExternalId>)>, String> {
-    let client = services.tsundoku.client();
-    if !client.is_configured() {
-        return Ok(None);
-    }
     let Some(token) = id.as_tsundoku() else {
         return Ok(None);
     };
-
-    let feed = client
-        .feed_filtered(None, Some(1), std::slice::from_ref(&token))
+    let resolved = services
+        .tsundoku
+        .resolve_external_ids(std::slice::from_ref(&token))
         .await
         .map_err(|e| format!("tsundoku: {e}"))?;
-    let Some(item) = feed.items.first() else {
+    let Some(item) = resolved.get(&token) else {
         return Ok(None);
     };
 
@@ -438,7 +434,7 @@ async fn tsundoku_view(
         .external_ids
         .iter()
         .map(|e| e.normalized())
-        .filter(|e| !matches!(e.provider, Provider::Other(_)))
+        .filter(ExternalId::is_known)
         .collect();
 
     Ok(Some((

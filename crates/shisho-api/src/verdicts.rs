@@ -160,85 +160,22 @@ fn to_dto(row: verdict::Model) -> VerdictDto {
     }
 }
 
-/// The public MangaBaka series URL for a numeric id: `https://mangabaka.org/<id>`.
-fn mangabaka_public_url(id: &str) -> String {
-    format!("https://mangabaka.org/{id}")
-}
-
-/// The canonical Tsundoku join key for an external id (`<source>:<id>`), so a
-/// verdict's identity and a Tsundoku feed item's identities compare equal.
-fn canon(e: &ExternalId) -> String {
-    e.as_tsundoku()
-        .unwrap_or_else(|| format!("{}:{}", e.provider, e.id))
-}
-
 /// Enrich verdict DTOs in place with series title, summary, cover, and deep
-/// links (MangaBaka / Codex / Tsundoku). Every field is best-effort: a metadata
-/// gap, an unowned series, or an unreachable backend just leaves the
-/// corresponding field absent. Metadata lookups run concurrently.
+/// links. Best-effort per field (see `shisho_services::verdict_views`).
 async fn enrich(
     services: &shisho_services::Services,
-    codex_index: &std::collections::HashMap<String, String>,
+    codex_index: &shisho_services::library_snapshot::CodexIndex,
     dtos: &mut [VerdictDto],
 ) {
-    let codex_base = services.snapshots.codex().base_url().to_owned();
-
-    // Parse each row's series identity once; resolve their metadata together.
-    let parsed: Vec<Option<ExternalId>> = dtos
-        .iter()
-        .map(|d| {
-            d.series_id
-                .as_deref()
-                .and_then(|t| ExternalId::from_tsundoku(t).ok())
-        })
-        .collect();
-
-    let metas = futures_util::future::join_all(parsed.iter().map(|p| async {
-        match p {
-            Some(eid) => services.metadata.resolve(eid).await.ok().flatten(),
-            None => None,
-        }
-    }))
-    .await;
-
-    // Tsundoku deep links: resolve every row's identity against Tsundoku's feed
-    // in one paginated pass, mapping each known external id to its Tsundoku
-    // series id. Best-effort: a feed error just omits the links.
-    let tsundoku_ids = tsundoku_series_ids(services, &parsed).await;
-    let tsundoku_base = services.tsundoku.client().base_url().to_owned();
-
-    for ((dto, parsed), meta) in dtos.iter_mut().zip(parsed.iter()).zip(metas) {
-        if let Some(meta) = meta {
-            dto.title = Some(meta.title);
-            dto.cover_url = meta.cover_url;
-            dto.summary = meta.description;
-        }
-        if let Some(id) = dto
-            .series_id
-            .as_deref()
-            .and_then(|t| t.strip_prefix("mangabaka:"))
-        {
-            dto.mangabaka_url = Some(mangabaka_public_url(id));
-        }
-        let Some(eid) = parsed.as_ref() else { continue };
-        if !codex_base.is_empty()
-            && let Some(uuid) = codex_index.get(&canon(eid))
-        {
-            dto.codex_url = Some(format!(
-                "{}/series/{}",
-                codex_base.trim_end_matches('/'),
-                uuid
-            ));
-        }
-        if !tsundoku_base.is_empty()
-            && let Some(series_id) = tsundoku_ids.get(&canon(eid))
-        {
-            dto.tsundoku_url = Some(format!(
-                "{}/series/{}",
-                tsundoku_base.trim_end_matches('/'),
-                series_id
-            ));
-        }
+    let series: Vec<Option<String>> = dtos.iter().map(|d| d.series_id.clone()).collect();
+    let links = shisho_services::verdict_views::verdict_links(services, codex_index, &series).await;
+    for (dto, links) in dtos.iter_mut().zip(links) {
+        dto.title = links.title;
+        dto.cover_url = links.cover_url;
+        dto.summary = links.summary;
+        dto.mangabaka_url = links.mangabaka_url;
+        dto.codex_url = links.codex_url;
+        dto.tsundoku_url = links.tsundoku_url;
     }
 }
 
@@ -278,52 +215,6 @@ async fn codex_external_index(
             empty()
         }
     }
-}
-
-/// Resolve the parsed series identities against Tsundoku's feed in one paginated
-/// pass, returning a map from canonical external id -> Tsundoku series id. Empty
-/// when Tsundoku is unconfigured, nothing parses, or the feed errors.
-async fn tsundoku_series_ids(
-    services: &shisho_services::Services,
-    parsed: &[Option<ExternalId>],
-) -> std::collections::HashMap<String, i32> {
-    let mut out: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
-    let client = services.tsundoku.client();
-    if !client.is_configured() {
-        return out;
-    }
-    let tokens: Vec<String> = parsed
-        .iter()
-        .flatten()
-        .filter_map(|e| e.as_tsundoku())
-        .collect();
-    if tokens.is_empty() {
-        return out;
-    }
-    let mut cursor: Option<String> = None;
-    loop {
-        match client
-            .feed_filtered(cursor.as_deref(), Some(200), &tokens)
-            .await
-        {
-            Ok(page) => {
-                for item in &page.items {
-                    for eid in &item.external_ids {
-                        out.insert(canon(&eid.normalized()), item.series_id);
-                    }
-                }
-                cursor = page.next_cursor;
-                if !page.has_more || cursor.is_none() {
-                    break;
-                }
-            }
-            Err(err) => {
-                tracing::debug!(error = %err, "tsundoku feed resolution failed; tsundoku links omitted");
-                break;
-            }
-        }
-    }
-    out
 }
 
 fn matches(row: &verdict::Model, f: &VerdictFilters) -> bool {
@@ -489,14 +380,6 @@ mod tests {
 
     const USER: &str = "user-alice";
     const SUB: &str = "codex-alice";
-
-    #[test]
-    fn mangabaka_public_url_is_the_org_site() {
-        assert_eq!(
-            super::mangabaka_public_url("9741"),
-            "https://mangabaka.org/9741"
-        );
-    }
 
     async fn app() -> (axum::Router, std::sync::Arc<api::AppState>) {
         let mut cfg = AppConfig::default();

@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::library_snapshot::{self, CodexIndex, SnapshotSeries};
 use crate::read_state::ReadState;
+use crate::tsundoku_cache::Resolved;
 use crate::verdicts::VerdictIndex;
 use crate::{Services, UserCtx};
 use shisho_cache::SwrError;
@@ -44,8 +45,6 @@ const CATALOG_PAGE_SIZE: u32 = 50;
 const MAX_EXAMINED_FACTOR: usize = 8;
 /// Backend calls in flight per pool while enriching candidates.
 const FAN_OUT: usize = 8;
-/// Feed page size for batched external-ID resolution.
-const RESOLUTION_PAGE_LIMIT: u32 = 100;
 
 /// Which candidate pool to draw from.
 //
@@ -435,7 +434,7 @@ async fn enrich_backlog_series(
     let resolved = series
         .external_ids
         .iter()
-        .find_map(|id| resolution.get(&canonical(id)));
+        .find_map(|id| resolution.get(&id.canonical_key()));
     let (mut candidate, as_of) = match resolved {
         Some(resolved) => match services.tsundoku.detail(resolved.series_id).await {
             Ok(hit) => (
@@ -472,13 +471,13 @@ async fn catalog_item_candidate(
         .external_ids
         .iter()
         .map(|e| e.normalized())
-        .filter(|e| !matches!(e.provider, Provider::Other(_)))
+        .filter(ExternalId::is_known)
         .collect();
 
     // The mandatory per-user, Codex-authoritative anti-join.
     let owned = external_ids
         .iter()
-        .any(|e| owned_index.contains_key(&canonical(e)));
+        .any(|e| owned_index.contains_key(&e.canonical_key()));
     if owned || verdicts.excludes(&external_ids) {
         return Ok((None, detail_hit.as_of));
     }
@@ -487,56 +486,21 @@ async fn catalog_item_candidate(
     Ok((Some(candidate), detail_hit.as_of))
 }
 
-/// What one backlog series resolved to in Tsundoku.
-struct Resolved {
-    series_id: i32,
-    volume_coverage: Vec<CoverageSpan>,
-    chapter_coverage: Vec<CoverageSpan>,
-}
-
-/// Map the backlog's external IDs to Tsundoku series via the filtered feed
-/// (the only by-external-ID query Tsundoku offers), keyed by canonical
-/// `provider:id`.
+/// Map the backlog's external IDs to Tsundoku series (and their coverage),
+/// keyed by canonical `provider:id`.
 async fn resolve_in_tsundoku(
     services: &Services,
     backlog: &[&SnapshotSeries],
 ) -> Result<HashMap<String, Resolved>, TsundokuError> {
-    let client = services.tsundoku.client();
     let ids: Vec<String> = backlog
         .iter()
         .flat_map(|s| s.external_ids.iter())
         .filter_map(ExternalId::as_tsundoku)
         .collect();
-    if ids.is_empty() || !client.is_configured() {
-        return Ok(HashMap::new());
-    }
-
-    let mut map = HashMap::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let page = client
-            .feed_filtered(cursor.as_deref(), Some(RESOLUTION_PAGE_LIMIT), &ids)
-            .await?;
-        for item in &page.items {
-            for eid in &item.external_ids {
-                map.insert(
-                    canonical(&eid.normalized()),
-                    Resolved {
-                        series_id: item.series_id,
-                        volume_coverage: item.volume_coverage.clone(),
-                        chapter_coverage: item.chapter_coverage.clone(),
-                    },
-                );
-            }
-        }
-        cursor = page.next_cursor;
-        if !page.has_more || cursor.is_none() {
-            return Ok(map);
-        }
-    }
+    services.tsundoku.resolve_external_ids(&ids).await
 }
 
-/// Attach coverage spans to acquirable candidates in one batched feed call.
+/// Attach coverage spans to acquirable candidates in one batched feed pass.
 async fn attach_coverage(
     services: &Services,
     candidates: &mut [Candidate],
@@ -545,37 +509,21 @@ async fn attach_coverage(
         .iter()
         .flat_map(|c| c.external_ids.iter().cloned())
         .collect();
-    if ids.is_empty() {
-        return Ok(());
-    }
-
-    let client = services.tsundoku.client();
-    let mut by_series: HashMap<i32, (Vec<CoverageSpan>, Vec<CoverageSpan>)> = HashMap::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let page = client
-            .feed_filtered(cursor.as_deref(), Some(RESOLUTION_PAGE_LIMIT), &ids)
-            .await?;
-        for item in page.items {
-            by_series.insert(
-                item.series_id,
-                (item.volume_coverage, item.chapter_coverage),
-            );
-        }
-        cursor = page.next_cursor;
-        if !page.has_more || cursor.is_none() {
-            break;
-        }
-    }
+    let by_series: HashMap<i32, Resolved> = services
+        .tsundoku
+        .resolve_external_ids(&ids)
+        .await?
+        .into_values()
+        .map(|resolved| (resolved.series_id, resolved))
+        .collect();
 
     for candidate in candidates.iter_mut() {
-        if let Some((volumes, chapters)) = candidate
+        if let Some(resolved) = candidate
             .tsundoku_series_id
             .and_then(|id| by_series.get(&id))
-            .cloned()
         {
-            candidate.volume_coverage = volumes;
-            candidate.chapter_coverage = chapters;
+            candidate.volume_coverage = resolved.volume_coverage.clone();
+            candidate.chapter_coverage = resolved.chapter_coverage.clone();
         }
     }
     Ok(())
@@ -591,7 +539,7 @@ fn enriched_candidate(
         .external_ids
         .iter()
         .map(|e| e.normalized())
-        .filter(|e| !matches!(e.provider, Provider::Other(_)))
+        .filter(ExternalId::is_known)
         .collect();
 
     Candidate {
@@ -674,7 +622,7 @@ async fn backfill_from_mangabaka(services: &Services, candidate: &mut Candidate)
         .external_ids
         .iter()
         .filter_map(|s| ExternalId::from_tsundoku(s).ok())
-        .filter(|id| !matches!(id.provider, Provider::Other(_)))
+        .filter(ExternalId::is_known)
         .collect();
     let Some(meta) = services.metadata.resolve_any(ids.iter()).await else {
         return;
@@ -710,11 +658,6 @@ async fn backfill_from_mangabaka(services: &Services, candidate: &mut Candidate)
     }
 }
 
-fn canonical(id: &ExternalId) -> String {
-    id.as_tsundoku()
-        .unwrap_or_else(|| format!("{}:{}", id.provider, id.id))
-}
-
 fn mangabaka_id<'a>(ids: impl Iterator<Item = &'a ExternalId>) -> Option<i64> {
     let mut ids = ids;
     ids.find(|id| id.provider == Provider::Mangabaka)
@@ -724,7 +667,7 @@ fn mangabaka_id<'a>(ids: impl Iterator<Item = &'a ExternalId>) -> Option<i64> {
 fn union_canonical<'a>(ids: impl Iterator<Item = &'a ExternalId>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for id in ids {
-        let s = canonical(id);
+        let s = id.canonical_key();
         if !out.contains(&s) {
             out.push(s);
         }

@@ -171,13 +171,6 @@ pub type CodexIndex = HashMap<String, String>;
 /// `external-index` page size (Codex caps this at 500).
 const INDEX_PAGE_SIZE: u64 = 500;
 
-/// The canonical index key for an external id (`<source>:<id>`), matching how
-/// consumers look series up.
-fn index_key(id: &ExternalId) -> String {
-    id.as_tsundoku()
-        .unwrap_or_else(|| format!("{}:{}", id.provider, id.id))
-}
-
 /// The snapshot cache, keyed by `user_sub`.
 #[derive(Clone)]
 pub struct LibrarySnapshotService {
@@ -278,7 +271,7 @@ async fn build_external_index(
             .await?;
         for entry in &response.data {
             for eid in entry.normalized_external_ids() {
-                map.insert(index_key(&eid), entry.id.clone());
+                map.insert(eid.canonical_key(), entry.id.clone());
             }
         }
         if response.data.is_empty() || page >= response.total_pages {
@@ -325,7 +318,7 @@ async fn build(
         let mut raw_failures = Vec::new();
         for raw in &row.external_ids {
             match ExternalId::from_codex_parts(&raw.source, &raw.external_id) {
-                Ok(id) if !matches!(id.provider, Provider::Other(_)) => mapped.push(id),
+                Ok(id) if id.is_known() => mapped.push(id),
                 _ => raw_failures.push(format!("{}:{}", raw.source, raw.external_id)),
             }
         }

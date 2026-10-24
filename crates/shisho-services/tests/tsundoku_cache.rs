@@ -194,3 +194,51 @@ async fn poll_resumes_from_the_stored_cursor_after_restart() {
         Some("stored-cursor-42")
     );
 }
+
+#[tokio::test]
+async fn external_id_resolution_follows_the_feed_cursor() {
+    let server = MockServer::start().await;
+    let item = |series_id: i32, mangabaka: &str| {
+        serde_json::json!({
+            "seriesId": series_id,
+            "canonicalTitle": format!("Series {series_id}"),
+            "externalIds": [{ "provider": "mangabaka", "externalId": mangabaka, "fetchedAt": 1 }],
+            "volumeCoverage": [{ "start": 1.0, "end": 3.0 }],
+            "chapterCoverage": [],
+            "highestVolume": 3.0,
+            "highestChapter": null,
+            "updatedAt": 1
+        })
+    };
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .and(wiremock::matchers::body_partial_json(
+            serde_json::json!({ "cursor": "page-2" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [item(202, "2")], "nextCursor": null, "hasMore": false
+        })))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [item(201, "1")], "nextCursor": "page-2", "hasMore": true
+        })))
+        .with_priority(2)
+        .mount(&server)
+        .await;
+
+    let resolved = cache(&server, fresh_db().await)
+        .resolve_external_ids(&["mangabaka:1".into(), "mangabaka:2".into()])
+        .await
+        .expect("resolution");
+
+    assert_eq!(resolved["mangabaka:1"].series_id, 201);
+    assert_eq!(
+        resolved["mangabaka:2"].series_id, 202,
+        "second page followed"
+    );
+    assert_eq!(resolved["mangabaka:2"].volume_coverage.len(), 1);
+}

@@ -215,11 +215,33 @@ impl ExternalId {
     pub fn key(&self) -> (&Provider, &str) {
         (&self.provider, &self.id)
     }
+
+    /// The canonical `<token>:<id>` string every cross-system map is keyed
+    /// by: the Tsundoku form for known providers, `<name>:<id>` otherwise.
+    pub fn canonical_key(&self) -> String {
+        self.as_tsundoku()
+            .unwrap_or_else(|| format!("{}:{}", self.provider, self.id))
+    }
+
+    /// A known provider: one that participates in joins (`Other` never does).
+    pub fn is_known(&self) -> bool {
+        !matches!(self.provider, Provider::Other(_))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_key_uses_the_tsundoku_form_for_known_providers() {
+        let mal = ExternalId::from_codex("plugin:myanimelist:42").unwrap();
+        assert_eq!(mal.canonical_key(), "mal:42");
+        assert!(mal.is_known());
+        let other = ExternalId::from_codex("plugin:weird:7").unwrap();
+        assert!(!other.is_known());
+        assert!(other.canonical_key().ends_with(":7"));
+    }
 
     /// The full PRD §2.3 table: (Codex source, Tsundoku token).
     const CONVERSION_TABLE: &[(&str, &str)] = &[

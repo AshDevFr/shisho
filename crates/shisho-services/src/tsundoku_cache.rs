@@ -19,7 +19,7 @@
 //! the feed from the beginning once to establish the cursor; with cold
 //! caches that walk is invalidation-free and costs only the page reads.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,13 +30,23 @@ use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait};
 use shisho_cache::{Cached, SwrCache, SwrConfig, SwrError};
 use shisho_db::entities::feed_cursor;
 use shisho_tsundoku::{
-    SeriesDetail, SeriesListPage, SeriesListQuery, TsundokuClient, TsundokuError,
+    CoverageSpan, SeriesDetail, SeriesListPage, SeriesListQuery, TsundokuClient, TsundokuError,
 };
 
 /// The `feed_cursor` row key for the Tsundoku series feed.
 const FEED_KEY: &str = "tsundoku";
 /// Feed page size for one poll pass.
 const FEED_PAGE_LIMIT: u32 = 100;
+/// Feed page size for batched external-ID resolution.
+const RESOLUTION_PAGE_LIMIT: u32 = 100;
+
+/// What one external id resolved to in Tsundoku's catalog.
+#[derive(Debug, Clone)]
+pub struct Resolved {
+    pub series_id: i32,
+    pub volume_coverage: Vec<CoverageSpan>,
+    pub chapter_coverage: Vec<CoverageSpan>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum FeedPollError {
@@ -105,6 +115,42 @@ impl TsundokuCache {
                 client.series_detail(id).await.map(Arc::new)
             })
             .await
+    }
+
+    /// Map external ids (Tsundoku `<token>:<id>` form) to the Tsundoku series
+    /// carrying them, with coverage, via the filtered feed: the only
+    /// by-external-ID query Tsundoku offers. Every external id of a matched
+    /// series is a key, so callers can look up by any identity they hold.
+    /// Empty when Tsundoku is unconfigured or there is nothing to resolve.
+    pub async fn resolve_external_ids(
+        &self,
+        ids: &[String],
+    ) -> Result<HashMap<String, Resolved>, TsundokuError> {
+        let mut map = HashMap::new();
+        if ids.is_empty() || !self.client.is_configured() {
+            return Ok(map);
+        }
+        let mut cursor: Option<String> = None;
+        loop {
+            let page = self
+                .client
+                .feed_filtered(cursor.as_deref(), Some(RESOLUTION_PAGE_LIMIT), ids)
+                .await?;
+            for item in page.items {
+                let resolved = Resolved {
+                    series_id: item.series_id,
+                    volume_coverage: item.volume_coverage,
+                    chapter_coverage: item.chapter_coverage,
+                };
+                for eid in &item.external_ids {
+                    map.insert(eid.normalized().canonical_key(), resolved.clone());
+                }
+            }
+            cursor = page.next_cursor;
+            if !page.has_more || cursor.is_none() {
+                return Ok(map);
+            }
+        }
     }
 
     /// Most recent successful Tsundoku load (list or detail), for

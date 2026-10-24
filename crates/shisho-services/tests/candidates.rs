@@ -174,7 +174,10 @@ async fn library_pool_returns_exactly_the_untouched_non_verdicted_set() {
             "The adventure is over but life goes on for an elf mage just beginning to learn what living is all about."
         )
     );
-    assert_eq!(frieren.volume_coverage.len(), 1);
+    assert!(
+        frieren.volume_coverage.is_empty(),
+        "coverage is an acquisition concern; owned series do not ship it"
+    );
     // Genres are the Codex ∪ Tsundoku union.
     assert_eq!(frieren.genres, vec!["Fantasy", "Adventure"]);
 
@@ -845,4 +848,66 @@ async fn library_pool_pages_with_offset() {
         );
     }
     assert_eq!(second.candidates.len(), 5);
+}
+
+#[tokio::test]
+async fn payload_of_forty_bloated_candidates_stays_compact() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    let long = "A sentence about the plot that goes on for a while. ".repeat(30);
+    let tags: Vec<serde_json::Value> = (0..30)
+        .map(|i| serde_json::json!({ "id": format!("t-{i}"), "name": format!("Tag Number {i}") }))
+        .collect();
+    let rows: Vec<serde_json::Value> = (0..40)
+        .map(|i| {
+            let id = format!("s{}", 500 + i);
+            let mut row = codex_row(&id, &format!("Bloated Series {i}"), &["Fantasy"], 5, 5);
+            row["metadata"]["summary"] = long.clone().into();
+            row["tags"] = tags.clone().into();
+            row["externalIds"] = serde_json::json!([
+                { "id": "a", "seriesId": id, "source": "plugin:mangabaka", "externalId": format!("{}", 500 + i), "externalUrl": null },
+                { "id": "b", "seriesId": id, "source": "plugin:myanimelist", "externalId": format!("{}", 900 + i), "externalUrl": null },
+                { "id": "c", "seriesId": id, "source": "plugin:anilist", "externalId": format!("{}", 700 + i), "externalUrl": null },
+                { "id": "d", "seriesId": id, "source": "plugin:mangadex", "externalId": format!("uuid-{i}"), "externalUrl": null },
+            ]);
+            row
+        })
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": 40, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [] })),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(&tsundoku)
+        .await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, fresh_db().await),
+        &user(),
+        Pool::Library,
+        &Filters::default(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(set.candidates.len(), 40);
+    let bytes = serde_json::to_string(&set).unwrap().len();
+    assert!(bytes < 24 * 1024, "payload is {bytes} bytes");
+    let first = &set.candidates[0];
+    assert!(first.tags.len() <= 8);
+    assert!(first.external_ids.len() <= 2);
+    assert_eq!(first.external_ids[0], "mangabaka:500");
+    assert!(first.description.as_deref().unwrap().ends_with('…'));
 }

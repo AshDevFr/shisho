@@ -44,6 +44,11 @@ const CATALOG_PAGE_SIZE: u32 = 50;
 /// Acquirable pool: stop examining the catalog after this many items even
 /// if the target is not met (bounds work when filters reject everything).
 const MAX_EXAMINED_FACTOR: usize = 8;
+/// Descriptions ship trimmed to about this many characters; `lookup` has the
+/// full text.
+const DESCRIPTION_CHARS: usize = 280;
+/// Tags shipped per candidate.
+const MAX_TAGS: usize = 8;
 /// Backend calls in flight per pool while enriching candidates.
 const FAN_OUT: usize = 8;
 
@@ -343,6 +348,13 @@ async fn library_pool(
         candidates.push(candidate);
     }
 
+    for candidate in &mut candidates {
+        // Coverage is an acquisition concern; the caller already owns these.
+        candidate.volume_coverage.clear();
+        candidate.chapter_coverage.clear();
+        compact(candidate, Some(&taste));
+    }
+
     Ok(CandidateSet {
         pool: Pool::Library,
         candidates,
@@ -443,6 +455,9 @@ async fn acquirable_pool(
 
     if let Err(err) = attach_coverage(services, &mut candidates).await {
         tracing::warn!(error = %err, "coverage attach failed; acquirable candidates ship without spans");
+    }
+    for candidate in &mut candidates {
+        compact(candidate, None);
     }
 
     Ok(CandidateSet {
@@ -734,6 +749,55 @@ fn page_has_more(page: u32, total: i64) -> bool {
     (i64::from(page) + 1) * i64::from(CATALOG_PAGE_SIZE) < total
 }
 
+/// Trim a candidate to what ranking and verification need: a short
+/// description, the tags that matter most to the caller, and at most two
+/// external ids (MangaBaka first). Full metadata is one `lookup` away.
+fn compact(candidate: &mut Candidate, taste: Option<&TasteVector>) {
+    if let Some(description) = candidate.description.as_mut() {
+        *description = truncate_description(description, DESCRIPTION_CHARS);
+    }
+    if candidate.tags.len() > MAX_TAGS {
+        if let Some(taste) = taste {
+            // Stable: equally weighted tags keep their source order.
+            candidate.tags.sort_by(|a, b| {
+                taste
+                    .term_weight(b)
+                    .abs()
+                    .total_cmp(&taste.term_weight(a).abs())
+            });
+        }
+        candidate.tags.truncate(MAX_TAGS);
+    }
+    if let Some(pos) = candidate
+        .external_ids
+        .iter()
+        .position(|id| id.starts_with("mangabaka:"))
+    {
+        let mangabaka = candidate.external_ids.remove(pos);
+        candidate.external_ids.insert(0, mangabaka);
+    }
+    candidate.external_ids.truncate(2);
+}
+
+/// Cut `text` to about `max` characters, at a sentence end when one falls in
+/// the second half of the window, else at a word boundary, marking the cut
+/// with an ellipsis. Counts characters, not bytes.
+fn truncate_description(text: &str, max: usize) -> String {
+    let text = text.trim();
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let window: String = text.chars().take(max).collect();
+    let half = window.len() / 2;
+    let cut = window
+        .rfind(". ")
+        .filter(|&i| i >= half)
+        .map(|i| i + 1)
+        .or_else(|| window.rfind(char::is_whitespace))
+        .unwrap_or(window.len());
+    format!("{}…", window[..cut].trim_end())
+}
+
 /// Scores ship rounded: three decimals is all the ordering signal there is.
 fn round3(x: f64) -> f64 {
     (x * 1000.0).round() / 1000.0
@@ -749,6 +813,30 @@ fn oldest(current: Option<DateTime<Utc>>, new: DateTime<Utc>) -> Option<DateTime
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payload_truncation_prefers_a_sentence_end() {
+        let text = format!(
+            "{} Second sentence keeps going and going.",
+            "First sentence here.".repeat(3)
+        );
+        let cut = truncate_description(&text, 70);
+        assert!(cut.ends_with(".…"), "{cut}");
+        assert!(cut.chars().count() <= 71);
+    }
+
+    #[test]
+    fn payload_truncation_is_char_boundary_safe() {
+        let text = "日本語の説明文です。".repeat(60);
+        let cut = truncate_description(&text, 280);
+        assert!(cut.ends_with('…'));
+        assert!(cut.chars().count() <= 281);
+    }
+
+    #[test]
+    fn payload_short_descriptions_are_untouched() {
+        assert_eq!(truncate_description("  Short. ", 280), "Short.");
+    }
 
     #[test]
     fn pool_schema_is_a_flat_inline_string_enum_not_oneof() {

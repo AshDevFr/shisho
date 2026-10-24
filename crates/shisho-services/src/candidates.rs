@@ -18,7 +18,7 @@
 //! Pools over-provision (default 40, 30-50 band) and set `truncated` when
 //! more candidates existed than were returned.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, stream};
@@ -347,12 +347,40 @@ async fn library_pool(
                 .any(|sel| library_snapshot::selector_matches(sel, &s.library_id, &s.library_name))
     };
 
+    // "Never read" means no copy of the series was ever opened or rated.
+    // Chapter and volume editions are separate Codex series sharing external
+    // ids, so a read or rated copy settles every copy, and of several
+    // untouched copies only the first is offered.
+    let keys = |s: &SnapshotSeries| -> Vec<String> {
+        s.external_ids
+            .iter()
+            .filter(|id| id.is_known())
+            .map(ExternalId::canonical_key)
+            .collect()
+    };
+    let engaged: HashSet<String> = snapshot
+        .series
+        .iter()
+        .filter(|s| s.read_state != ReadState::Untouched || s.rating.is_some())
+        .flat_map(keys)
+        .collect();
+    let mut offered: HashSet<String> = HashSet::new();
     let eligible: Vec<&SnapshotSeries> = snapshot
         .series
         .iter()
         .filter(|s| in_selected_libraries(s))
-        .filter(|s| s.read_state == ReadState::Untouched)
+        .filter(|s| s.read_state == ReadState::Untouched && s.rating.is_none())
         .filter(|s| !verdicts.excludes(&s.external_ids))
+        .filter(|s| {
+            let keys = keys(s);
+            let fresh = keys
+                .iter()
+                .all(|k| !engaged.contains(k) && !offered.contains(k));
+            if fresh {
+                offered.extend(keys);
+            }
+            fresh
+        })
         .collect();
 
     // Rank the whole eligible backlog from the snapshot's own genres and tags

@@ -1399,3 +1399,67 @@ async fn profile_filter_drops_blocked_tags_from_discover() {
         set.candidates.iter().map(|c| &c.title).collect::<Vec<_>>()
     );
 }
+
+/// A Codex row whose MangaBaka id is set explicitly, so two copies of one
+/// series (chapters and volumes) can share it.
+fn codex_copy(
+    id: &str,
+    title: &str,
+    mangabaka: &str,
+    books: i64,
+    unread: i64,
+) -> serde_json::Value {
+    let mut row = codex_row(id, title, &["Fantasy"], books, unread);
+    row["externalIds"][0]["externalId"] = serde_json::json!(mangabaka);
+    row
+}
+
+#[tokio::test]
+async fn library_pool_skips_rated_series_and_copies_of_read_ones() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    let rows = vec![
+        codex_copy("s1", "Loved Fantasy", "1", 10, 0),
+        codex_copy("s2", "Rated But Untouched", "2", 7, 7),
+        codex_copy("s3", "Twin Chapters", "3", 40, 40),
+        codex_copy("s4", "Twin Volumes", "3", 7, 3),
+        codex_copy("s5", "Double Chapters", "5", 30, 30),
+        codex_copy("s6", "Double Volumes", "5", 6, 6),
+        codex_copy("s7", "Plain Unread", "7", 5, 5),
+    ];
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": 7, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [
+                { "id": "r1", "seriesId": "s1", "rating": 92, "notes": null },
+                { "id": "r2", "seriesId": "s2", "rating": 95, "notes": null },
+            ]})),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(&tsundoku)
+        .await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, fresh_db().await),
+        &user(),
+        Pool::Library,
+        &Filters::default(),
+    )
+    .await
+    .expect("library pool");
+
+    let mut titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    titles.sort_unstable();
+    assert_eq!(titles, vec!["Double Chapters", "Plain Unread"]);
+}

@@ -138,6 +138,13 @@ impl MangabakaProvider {
         if !dump.exists() {
             return false;
         }
+        // A dump prepared by an older build lacks the side tables; adding
+        // them is a one-off cost (tens of seconds) that beats waiting for
+        // the next scheduled refresh with discovery switched off.
+        if let Err(e) = offline::setup::ensure_side_tables(&dump).await {
+            tracing::warn!(error = ?e, path = %dump.display(),
+                "could not add side tables to the existing dump; discovery stays off until the next refresh");
+        }
         match open_dump(&dump).await {
             Ok(loaded) => {
                 tracing::info!(

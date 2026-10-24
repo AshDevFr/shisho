@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use sea_orm::{ConnectOptions, ConnectionTrait, Database, Statement};
+use sea_orm::{ConnectOptions, ConnectionTrait, Database, Statement, TransactionTrait};
 
 const INDEXES: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_series_anilist \
@@ -130,12 +130,32 @@ async fn build_side_tables(db: &sea_orm::DatabaseConnection) -> Result<()> {
         "CREATE INDEX idx_series_relations_related ON series_relations(related_id)".into(),
     ]);
 
+    // One transaction, so a build killed halfway leaves no partial
+    // `series_terms` behind for the existence check above to trust.
     tracing::info!("building dump side tables (terms, term stats, relations)");
+    let txn = db.begin().await.context("starting side table build")?;
     for stmt in statements {
-        db.execute_raw(Statement::from_string(backend, stmt.clone()))
+        txn.execute_raw(Statement::from_string(backend, stmt.clone()))
             .await
             .with_context(|| format!("building side tables via {stmt}"))?;
     }
+    txn.commit().await.context("committing side tables")?;
+    Ok(())
+}
+
+/// Add the side tables to a dump already in service. A dump prepared before
+/// they existed would otherwise go without discovery, franchise links and
+/// term statistics until the next scheduled refresh replaces it.
+pub async fn ensure_side_tables(dump_path: impl AsRef<Path>) -> Result<()> {
+    let path = dump_path.as_ref();
+    let url = format!("sqlite://{}?mode=rw", path.display());
+    let mut opts = ConnectOptions::new(&url);
+    opts.max_connections(1).sqlx_logging(false);
+    let db = Database::connect(opts)
+        .await
+        .with_context(|| format!("opening dump {} to add side tables", path.display()))?;
+    build_side_tables(&db).await?;
+    db.close().await.context("closing dump after side tables")?;
     Ok(())
 }
 
@@ -249,6 +269,32 @@ mod tests {
             !frieren.contains(&"Hero Dies"),
             "spoiler tags stay out: {frieren:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_dump_prepared_before_side_tables_gains_them_in_place() {
+        let dir = TempDir::new().unwrap();
+        crate::fixtures::write_dump_fixture(dir.path())
+            .await
+            .unwrap();
+        let path = crate::offline::dump_path(dir.path());
+        {
+            let db = Database::connect(format!("sqlite://{}?mode=rw", path.display()))
+                .await
+                .unwrap();
+            for table in ["series_terms", "term_stats", "series_relations"] {
+                db.execute_unprepared(&format!("DROP TABLE {table}"))
+                    .await
+                    .unwrap();
+            }
+            db.close().await.unwrap();
+        }
+
+        ensure_side_tables(&path).await.unwrap();
+        ensure_side_tables(&path).await.unwrap(); // already there: a no-op
+
+        let store = crate::offline::OfflineStore::open_ro(&path).await.unwrap();
+        assert_eq!(store.term_series_count("elves").await.unwrap(), Some(2));
     }
 
     #[tokio::test]

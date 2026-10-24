@@ -197,7 +197,7 @@ release-prepare: ## Prepare a release (usage: make release-prepare VERSION=1.0.0
 
 	@# Generate changelog (skip if already modified)
 	@echo "$(YELLOW)Generating CHANGELOG.md...$(NC)";
-	@if git diff --quiet CHANGELOG.md 2>/dev/null && git diff --cached --quiet CHANGELOG.md 2>/dev/null; then \
+	@if [ ! -f CHANGELOG.md ] || { git diff --quiet CHANGELOG.md 2>/dev/null && git diff --cached --quiet CHANGELOG.md 2>/dev/null; }; then \
 		$(MAKE) changelog-release VERSION=$(VERSION); \
 		echo "$(GREEN)✓$(NC) Generated CHANGELOG.md for v$(VERSION)"; \
 	else \

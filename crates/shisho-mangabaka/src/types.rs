@@ -43,10 +43,43 @@ pub struct SeriesMetadata {
     pub description: Option<String>,
     pub genres: Vec<String>,
     pub tags: Vec<String>,
+    /// MangaBaka's content rating; `None` when the source does not say.
+    pub content_rating: Option<ContentRating>,
+    pub authors: Vec<String>,
     /// Cross-references to other providers, as canonical external IDs
     /// (the `mangabaka:<id>` identity itself is `mangabaka_id`).
     pub foreign_ids: Vec<ExternalId>,
     pub origin: MetadataOrigin,
+}
+
+/// MangaBaka's content rating scale, mildest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ContentRating {
+    Safe,
+    Suggestive,
+    Erotica,
+    Pornographic,
+}
+
+impl ContentRating {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "safe" => Some(Self::Safe),
+            "suggestive" => Some(Self::Suggestive),
+            "erotica" => Some(Self::Erotica),
+            "pornographic" => Some(Self::Pornographic),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Safe => "safe",
+            Self::Suggestive => "suggestive",
+            Self::Erotica => "erotica",
+            Self::Pornographic => "pornographic",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,4 +163,20 @@ pub struct RefreshSummary {
     pub series_rows: u64,
     /// SHA-1 of the downloaded tarball (doubles as a dump version).
     pub sha1: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContentRating;
+
+    #[test]
+    fn content_rating_parses_case_insensitively_and_orders_by_explicitness() {
+        assert_eq!(
+            ContentRating::parse(" Pornographic "),
+            Some(ContentRating::Pornographic)
+        );
+        assert_eq!(ContentRating::parse("unknown"), None);
+        assert!(ContentRating::Erotica < ContentRating::Pornographic);
+        assert!(ContentRating::Safe < ContentRating::Suggestive);
+    }
 }

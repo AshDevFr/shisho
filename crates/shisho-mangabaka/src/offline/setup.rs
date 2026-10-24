@@ -140,7 +140,9 @@ mod tests {
                 source_kitsu_id INTEGER,
                 source_shikimori_id INTEGER,
                 source_anime_planet_id TEXT,
-                source_anime_news_network_id INTEGER
+                source_anime_news_network_id INTEGER,
+                content_rating TEXT,
+                authors TEXT
             )"
             .to_string(),
         ))

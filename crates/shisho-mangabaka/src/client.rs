@@ -73,6 +73,10 @@ pub struct MbSeries {
     pub genres: Option<Vec<String>>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub content_rating: Option<String>,
+    #[serde(default)]
+    pub authors: Option<Vec<String>>,
     /// `{anilist: {id, ...}, my_anime_list: {...}, manga_updates: {...},
     ///  mangadex: {...}, kitsu: {...}, anime_planet: {...},
     ///  anime_news_network: {...}, shikimori: {...}}`

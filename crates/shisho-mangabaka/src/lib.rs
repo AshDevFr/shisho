@@ -29,8 +29,8 @@ pub use negative_cache::NegativeCache;
 pub use offline::OfflineStore;
 pub use provider::{BackboneStatus, MangabakaProvider, RefreshAttempt};
 pub use types::{
-    MetadataOrigin, RefreshOutcome, RefreshSummary, SearchHit, SeriesKind, SeriesMetadata,
-    SeriesStatus,
+    ContentRating, MetadataOrigin, RefreshOutcome, RefreshSummary, SearchHit, SeriesKind,
+    SeriesMetadata, SeriesStatus,
 };
 
 /// Canonical provider token (matches `shisho_ids::Provider::Mangabaka`).

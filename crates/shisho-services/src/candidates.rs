@@ -33,6 +33,7 @@ use crate::{Services, UserCtx};
 use shisho_cache::SwrError;
 use shisho_codex::CodexError;
 use shisho_ids::{ExternalId, Provider};
+use shisho_mangabaka::ContentRating;
 use shisho_tsundoku::{CoverageSpan, Order, SeriesDetail, SeriesListQuery, TsundokuError};
 
 /// Default over-provision target (PRD: 30-50).
@@ -95,11 +96,20 @@ pub struct Filters {
     pub limit: Option<usize>,
     /// Ranked candidates to skip, for paging past the first slice.
     pub offset: Option<usize>,
+    /// Include series MangaBaka rates pornographic (excluded by default).
+    pub allow_explicit: bool,
 }
 
 impl Filters {
     fn limit(&self) -> usize {
         self.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
+    }
+
+    /// The default content gate: pornographic series stay out unless the
+    /// caller opted in. An unknown rating passes.
+    fn gates_out(&self, candidate: &Candidate) -> bool {
+        !self.allow_explicit
+            && candidate.content_rating.as_deref() == Some(ContentRating::Pornographic.as_str())
     }
 
     fn matches(&self, genres: &[String], tags: &[String], status: Option<&str>) -> bool {
@@ -160,6 +170,11 @@ pub struct Candidate {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
+    /// MangaBaka's content rating: safe, suggestive, erotica, or pornographic.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_rating: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub authors: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub volume_coverage: Vec<CoverageSpan>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -330,11 +345,13 @@ async fn library_pool(
         if let Some(as_of) = as_of {
             tsundoku_as_of = oldest(tsundoku_as_of, as_of);
         }
-        if !filters.matches(
-            &candidate.genres,
-            &candidate.tags,
-            candidate.status.as_deref(),
-        ) {
+        if filters.gates_out(&candidate)
+            || !filters.matches(
+                &candidate.genres,
+                &candidate.tags,
+                candidate.status.as_deref(),
+            )
+        {
             continue;
         }
         if skip > 0 {
@@ -425,7 +442,7 @@ async fn acquirable_pool(
 
         let pending: Vec<_> = items
             .iter()
-            .map(|item| catalog_item_candidate(services, &owned_index, &verdicts, item.id))
+            .map(|item| catalog_item_candidate(services, &owned_index, &verdicts, filters, item.id))
             .collect();
         let mut details = stream::iter(pending).buffered(FAN_OUT);
 
@@ -514,6 +531,7 @@ async fn catalog_item_candidate(
     services: &Services,
     owned_index: &CodexIndex,
     verdicts: &VerdictIndex,
+    filters: &Filters,
     tsundoku_id: i32,
 ) -> Result<(Option<Candidate>, DateTime<Utc>), SwrError<TsundokuError>> {
     // The detail call carries the external IDs the anti-join needs; a
@@ -536,6 +554,9 @@ async fn catalog_item_candidate(
     }
     let mut candidate = catalog_candidate(detail, &external_ids);
     backfill_from_mangabaka(services, &mut candidate).await;
+    if filters.gates_out(&candidate) {
+        return Ok((None, detail_hit.as_of));
+    }
     Ok((Some(candidate), detail_hit.as_of))
 }
 
@@ -611,6 +632,8 @@ fn enriched_candidate(
             .or_else(|| series.summary.clone()),
         status: detail.status.clone().or_else(|| series.status.clone()),
         year: detail.year.or(series.year),
+        content_rating: None,
+        authors: Vec::new(),
         volume_coverage: resolved.volume_coverage.clone(),
         chapter_coverage: resolved.chapter_coverage.clone(),
         enrichment: Enrichment::Full,
@@ -635,6 +658,8 @@ fn codex_only_candidate(series: &SnapshotSeries) -> Candidate {
         description: series.summary.clone(),
         status: series.status.clone(),
         year: series.year,
+        content_rating: None,
+        authors: Vec::new(),
         volume_coverage: Vec::new(),
         chapter_coverage: Vec::new(),
         enrichment: Enrichment::None,
@@ -659,6 +684,8 @@ fn catalog_candidate(detail: &SeriesDetail, external_ids: &[ExternalId]) -> Cand
         description: detail.description.clone(),
         status: detail.status.clone(),
         year: detail.year,
+        content_rating: None,
+        authors: Vec::new(),
         volume_coverage: Vec::new(),
         chapter_coverage: Vec::new(),
         enrichment: Enrichment::Full,
@@ -667,16 +694,14 @@ fn catalog_candidate(detail: &SeriesDetail, external_ids: &[ExternalId]) -> Cand
     }
 }
 
-/// Fill metadata gaps from the MangaBaka backbone: a Codex-only candidate
-/// gains description/genres/tags/rating where the dump has the series
-/// (and is promoted to `enrichment: mangabaka`), and no candidate ships
-/// with an empty description when the dump has one. Tsundoku-sourced
-/// fields are never overwritten — the backbone only fills what is missing.
+/// Fill metadata from the MangaBaka backbone: every candidate takes its
+/// content rating and authors from it (the content gate needs the rating),
+/// a Codex-only candidate gains description/genres/tags/rating where the
+/// backbone has the series (and is promoted to `enrichment: mangabaka`), and
+/// no candidate ships with an empty description when the backbone has one.
+/// Tsundoku-sourced fields are never overwritten.
 async fn backfill_from_mangabaka(services: &Services, candidate: &mut Candidate) {
     let codex_only = candidate.enrichment == Enrichment::None;
-    if !codex_only && candidate.description.is_some() {
-        return;
-    }
     let ids: Vec<ExternalId> = candidate
         .external_ids
         .iter()
@@ -687,6 +712,10 @@ async fn backfill_from_mangabaka(services: &Services, candidate: &mut Candidate)
         return;
     };
 
+    candidate.content_rating = meta.content_rating.map(|r| r.as_str().to_owned());
+    if candidate.authors.is_empty() {
+        candidate.authors = meta.authors.clone();
+    }
     if candidate.description.is_none() {
         candidate.description = meta.description.clone();
     }

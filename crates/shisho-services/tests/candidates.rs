@@ -911,3 +911,92 @@ async fn payload_of_forty_bloated_candidates_stays_compact() {
     assert_eq!(first.external_ids[0], "mangabaka:500");
     assert!(first.description.as_deref().unwrap().ends_with('…'));
 }
+
+/// An acquirable catalog of two unowned picks whose MangaBaka rows are
+/// pornographic (77701) and erotica (77702).
+async fn mount_explicit_catalog(codex: &MockServer, tsundoku: &MockServer) {
+    mount_codex_library(codex).await;
+    let item = |id: i64, title: &str| {
+        let mut row = fixture("tsundoku", "acquirable_page")["items"][0].clone();
+        row["id"] = id.into();
+        row["canonicalTitle"] = title.into();
+        row
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [item(401, "Explicit Pick"), item(402, "Erotica Pick")],
+            "page": 0, "pageSize": 50, "total": 2,
+        })))
+        .mount(tsundoku)
+        .await;
+    for (id, mangabaka, title) in [
+        (401, "77701", "Explicit Pick"),
+        (402, "77702", "Erotica Pick"),
+    ] {
+        let mut detail = fixture("tsundoku", "acquirable_detail_301");
+        detail["id"] = id.into();
+        detail["canonicalTitle"] = title.into();
+        detail["externalIds"] = serde_json::json!([
+            { "provider": "mangabaka", "externalId": mangabaka, "fetchedAt": 1765200000 }
+        ]);
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v1/series/{id}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(detail))
+            .mount(tsundoku)
+            .await;
+    }
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(tsundoku)
+        .await;
+}
+
+#[tokio::test]
+async fn content_rating_gate_drops_pornographic_by_default() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_explicit_catalog(&codex, &tsundoku).await;
+    let http = reqwest::Client::new();
+    let services = Services::new(
+        CodexClient::new(&codex.uri(), http.clone()),
+        TsundokuClient::new(&tsundoku.uri(), Secret::new("admin-token"), http),
+        mangabaka_with_dump().await,
+        fresh_db().await,
+        &CacheConfig::default(),
+        false,
+    );
+
+    let default = get_candidates(&services, &user(), Pool::Acquirable, &Filters::default())
+        .await
+        .unwrap();
+    let titles: Vec<&str> = default
+        .candidates
+        .iter()
+        .map(|c| c.title.as_str())
+        .collect();
+    assert_eq!(
+        titles,
+        vec!["Erotica Pick"],
+        "erotica passes, pornographic does not"
+    );
+    assert_eq!(
+        default.candidates[0].content_rating.as_deref(),
+        Some("erotica")
+    );
+    assert_eq!(default.candidates[0].authors, vec!["Someone Else"]);
+
+    let opted_in = get_candidates(
+        &services,
+        &user(),
+        Pool::Acquirable,
+        &Filters {
+            allow_explicit: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(opted_in.candidates.len(), 2);
+}

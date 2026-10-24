@@ -15,7 +15,9 @@ use std::collections::BTreeMap;
 use shisho_ids::{ExternalId, Provider};
 
 use crate::client::{MbScaledImage, MbSeries};
-use crate::types::{MetadataOrigin, SearchHit, SeriesKind, SeriesMetadata, SeriesStatus};
+use crate::types::{
+    ContentRating, MetadataOrigin, SearchHit, SeriesKind, SeriesMetadata, SeriesStatus,
+};
 
 /// Canonical provider → MangaBaka's source component, used both as the
 /// `/v1/source/{source}/{id}` URL segment and (by the offline store) to
@@ -60,6 +62,11 @@ pub fn series_to_metadata(series: MbSeries) -> SeriesMetadata {
         description: series.description.filter(|s| !s.is_empty()),
         genres: series.genres.unwrap_or_default(),
         tags: series.tags.unwrap_or_default(),
+        content_rating: series
+            .content_rating
+            .as_deref()
+            .and_then(ContentRating::parse),
+        authors: series.authors.unwrap_or_default(),
         foreign_ids,
         origin: MetadataOrigin::Api,
     }
@@ -246,8 +253,18 @@ mod tests {
                 "mangadex": {"id": "a77742b1-befd-49a4-bff5-1ad4375089ee"},
                 "not_a_provider": {"id": 1}
             },
-            "genres": ["action", "horror"]
+            "genres": ["action", "horror"],
+            "content_rating": "suggestive",
+            "authors": ["Tatsuki Fujimoto"]
         })
+    }
+
+    #[test]
+    fn content_rating_and_authors_map_from_the_api() {
+        let s: MbSeries = serde_json::from_value(sample_payload()).unwrap();
+        let m = series_to_metadata(s);
+        assert_eq!(m.content_rating, Some(ContentRating::Suggestive));
+        assert_eq!(m.authors, vec!["Tatsuki Fujimoto".to_string()]);
     }
 
     #[test]

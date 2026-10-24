@@ -11,6 +11,8 @@
 //!   Tsundoku has never heard of)
 //! - `333` Verdicted By MangaBaka Id (the Codex `lib-f` series, which has
 //!   no summary — exercises description backfill from the dump)
+//! - `77701` Explicit Pick (pornographic) and `77702` Erotica Pick
+//!   (erotica), for the default content gate
 
 use std::path::Path;
 
@@ -58,7 +60,9 @@ pub async fn write_dump_fixture(dump_dir: &Path) -> anyhow::Result<()> {
             source_kitsu_id INTEGER,
             source_shikimori_id INTEGER,
             source_anime_planet_id TEXT,
-            source_anime_news_network_id INTEGER
+            source_anime_news_network_id INTEGER,
+            content_rating TEXT,
+            authors TEXT
         )",
         "INSERT INTO series (
             id, title, native_title, titles, type, status, year, final_volume,
@@ -92,6 +96,24 @@ pub async fn write_dump_fixture(dump_dir: &Path) -> anyhow::Result<()> {
         ) VALUES (
             333, 'Verdicted By MangaBaka Id', 'manga', 'releasing', 2019, 70.0,
             'Dump description for the 333 row.', 'active', '[\"Action\"]', '[]'
+        )",
+        // Explicitness fixtures for the content gate: one pornographic and one
+        // erotica series, both unowned acquirable picks.
+        "INSERT INTO series (
+            id, title, type, status, year, rating, description, state, genres, tags,
+            content_rating, authors
+        ) VALUES (
+            77701, 'Explicit Pick', 'manga', 'completed', 2015, 80.0,
+            'An explicit series.', 'active', '[\"Fantasy\"]', '[]',
+            'pornographic', '[\"Someone\"]'
+        )",
+        "INSERT INTO series (
+            id, title, type, status, year, rating, description, state, genres, tags,
+            content_rating, authors
+        ) VALUES (
+            77702, 'Erotica Pick', 'manga', 'completed', 2016, 80.0,
+            'An erotica series.', 'active', '[\"Romance\"]', '[]',
+            'erotica', '[\"Someone Else\"]'
         )",
     ];
     for stmt in statements {

@@ -38,6 +38,10 @@ pub struct GetCandidatesParams {
     /// see the next slice when 'truncated' is true.
     #[serde(default)]
     pub offset: Option<usize>,
+    /// Include series MangaBaka rates pornographic. Off by default; set it
+    /// only when the user asks for explicit titles.
+    #[serde(default)]
+    pub allow_explicit: bool,
 }
 
 #[tool_router(router = candidates_router, vis = "pub(crate)")]
@@ -45,7 +49,7 @@ impl McpService {
     #[tool(
         name = "get_candidates",
         annotations(read_only_hint = true, open_world_hint = true),
-        description = "Generate recommendation candidates from one of two pools: 'library' (series the caller owns but has never read - the primary pool) or 'acquirable' (well-rated catalog series the caller does not own). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Library candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
+        description = "Generate recommendation candidates from one of two pools: 'library' (series the caller owns but has never read - the primary pool) or 'acquirable' (well-rated catalog series the caller does not own). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Library candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Pornographic-rated series are excluded unless 'allowExplicit' is set; 'contentRating' shows the rating of the rest. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
     )]
     async fn get_candidates(
         &self,
@@ -61,6 +65,7 @@ impl McpService {
             libraries: params.libraries,
             limit: params.limit,
             offset: params.offset,
+            allow_explicit: params.allow_explicit,
         };
         match candidates::get_candidates(services, &user, params.pool, &filters).await {
             Ok(set) => tool_json(&set),

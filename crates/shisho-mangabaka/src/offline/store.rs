@@ -20,7 +20,7 @@ use shisho_ids::{ExternalId, Provider};
 
 use crate::mapping::{normalize_rating, parse_count, parse_kind, parse_status};
 use crate::scoring::best_dice;
-use crate::types::{MetadataOrigin, SearchHit, SeriesMetadata};
+use crate::types::{ContentRating, MetadataOrigin, SearchHit, SeriesMetadata};
 
 /// Maximum number of rows pulled from FTS before Dice re-ranking.
 ///
@@ -207,7 +207,7 @@ fn raw_row_columns(prefix: &str) -> String {
         "{p}id, {p}title, {p}native_title, {p}romanized_title, \
         {p}titles, {p}type AS kind, {p}status, {p}year, {p}final_volume, {p}total_chapters, \
         CAST({p}rating AS REAL) AS rating, \
-        {p}description, {p}state, {p}genres, {p}tags, \
+        {p}description, {p}state, {p}genres, {p}tags, {p}content_rating, {p}authors, \
         {p}cover_x350_x2, {p}cover_x350_x1, {p}cover_x250_x2, {p}cover_x250_x1, {p}cover_raw_url, \
         CAST({p}source_anilist_id AS TEXT) AS source_anilist_id, \
         CAST({p}source_my_anime_list_id AS TEXT) AS source_my_anime_list_id, \
@@ -303,6 +303,9 @@ struct RawRow {
     /// paths on the same canonical metadata.
     genres: Option<String>,
     tags: Option<String>,
+    content_rating: Option<String>,
+    /// JSON array of author names.
+    authors: Option<String>,
     cover_x350_x2: Option<String>,
     cover_x350_x1: Option<String>,
     cover_x250_x2: Option<String>,
@@ -350,6 +353,8 @@ fn row_to_metadata(row: RawRow) -> SeriesMetadata {
         description: row.description.filter(|s| !s.is_empty()),
         genres,
         tags,
+        content_rating: row.content_rating.as_deref().and_then(ContentRating::parse),
+        authors: parse_string_array(row.authors.as_deref()),
         foreign_ids,
         origin: MetadataOrigin::Dump,
     }
@@ -465,7 +470,9 @@ mod tests {
                 source_kitsu_id INTEGER,
                 source_shikimori_id INTEGER,
                 source_anime_planet_id TEXT,
-                source_anime_news_network_id INTEGER
+                source_anime_news_network_id INTEGER,
+                content_rating TEXT,
+                authors TEXT
             )"
             .to_string(),
         ))
@@ -477,7 +484,7 @@ mod tests {
             "INSERT INTO series (
                 id, title, native_title, romanized_title, titles, type, status, year,
                 final_volume, total_chapters, rating, description, state,
-                genres, tags,
+                genres, tags, content_rating, authors,
                 cover_x350_x2, source_anilist_id, source_my_anime_list_id,
                 source_manga_updates_id, source_kitsu_id, source_anime_planet_id
             ) VALUES (
@@ -485,6 +492,7 @@ mod tests {
                 '[{\"title\":\"Chainsaw-Man\",\"language\":\"en\"},{\"title\":\"CSM\",\"language\":\"en\"}]',
                 'manga', 'releasing', 2018, '24', '232', 85.0, 'Denji has a devil dog.', 'active',
                 '[\"Action\", \"Horror\"]', '[\"Chainsaws\", \"Devils\"]',
+                'suggestive', '[\"Tatsuki Fujimoto\"]',
                 'https://mb/350@2x.jpg', 105778, 116778,
                 'ylx5wzn', 54139, 'chainsaw-man'
             )"
@@ -553,6 +561,8 @@ mod tests {
         );
         assert_eq!(m.genres, vec!["Action".to_string(), "Horror".to_string()]);
         assert_eq!(m.tags, vec!["Chainsaws".to_string(), "Devils".to_string()]);
+        assert_eq!(m.content_rating, Some(ContentRating::Suggestive));
+        assert_eq!(m.authors, vec!["Tatsuki Fujimoto".to_string()]);
         assert_eq!(m.total_volumes, Some(24));
         assert_eq!(m.total_chapters, Some(232));
         // Rating is normalized from MangaBaka's 0-100 scale to 0-10.

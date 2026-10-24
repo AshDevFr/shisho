@@ -3,6 +3,7 @@
 //! candidate pools, lookup, library search, and the caches that bound their
 //! backend load.
 
+pub mod affinity;
 pub mod candidates;
 pub mod codex_identity;
 pub mod eval;

@@ -24,6 +24,7 @@ use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 
+use crate::affinity::{Anchor, Score, TasteVector};
 use crate::library_snapshot::{self, CodexIndex, SnapshotSeries};
 use crate::read_state::ReadState;
 use crate::tsundoku_cache::Resolved;
@@ -87,6 +88,8 @@ pub struct Filters {
     pub libraries: Vec<String>,
     /// Over-provision target; default 40, capped at 100.
     pub limit: Option<usize>,
+    /// Ranked candidates to skip, for paging past the first slice.
+    pub offset: Option<usize>,
 }
 
 impl Filters {
@@ -157,6 +160,14 @@ pub struct Candidate {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub chapter_coverage: Vec<CoverageSpan>,
     pub enrichment: Enrichment,
+    /// Affinity to the caller's taste (higher is closer); the pool is ordered
+    /// by it. Absent when the caller has no ratings or completed series yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+    /// The caller's own series that explain the score, with the genres and
+    /// tags shared.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub because: Vec<Anchor>,
 }
 
 /// Per-source data ages, so the model can phrase staleness honestly.
@@ -257,13 +268,30 @@ async fn library_pool(
                 .any(|sel| library_snapshot::selector_matches(sel, &s.library_id, &s.library_name))
     };
 
-    let backlog: Vec<&SnapshotSeries> = snapshot
+    let eligible: Vec<&SnapshotSeries> = snapshot
         .series
         .iter()
         .filter(|s| in_selected_libraries(s))
         .filter(|s| s.read_state == ReadState::Untouched)
         .filter(|s| !verdicts.excludes(&s.external_ids))
         .collect();
+
+    // Rank the whole eligible backlog from the snapshot's own genres and tags
+    // (no backend calls), then enrich only as far as the requested page.
+    // Ties, and every series on a cold start, keep the library's own order.
+    let taste = TasteVector::from_snapshot(&snapshot);
+    let mut ranked: Vec<(&SnapshotSeries, Option<Score>)> = eligible
+        .into_iter()
+        .map(|s| {
+            let score = (!taste.is_empty()).then(|| taste.score(&s.genres, &s.tags));
+            (s, score)
+        })
+        .collect();
+    ranked.sort_by(|a, b| {
+        let affinity = |x: &Option<Score>| x.as_ref().map_or(0.0, |s| s.affinity);
+        affinity(&b.1).total_cmp(&affinity(&a.1))
+    });
+    let backlog: Vec<&SnapshotSeries> = ranked.iter().map(|(s, _)| *s).collect();
 
     // One batched feed query maps the backlog's external IDs to Tsundoku
     // series (and their coverage). Tsundoku being down degrades enrichment
@@ -277,6 +305,7 @@ async fn library_pool(
     };
 
     let limit = filters.limit();
+    let mut skip = filters.offset.unwrap_or(0);
     let mut candidates = Vec::new();
     let mut tsundoku_as_of: Option<DateTime<Utc>> = None;
     let mut truncated = false;
@@ -286,9 +315,9 @@ async fn library_pool(
     // up front but only run when the buffered stream polls them (mapping
     // inside the stream trips a higher-ranked lifetime error once callers
     // require `Send`).
-    let pending: Vec<_> = backlog
+    let pending: Vec<_> = ranked
         .iter()
-        .map(|series| enrich_backlog_series(services, &resolution, series))
+        .map(|(series, score)| enrich_backlog_series(services, &resolution, series, score.as_ref()))
         .collect();
     let mut enriched = stream::iter(pending).buffered(FAN_OUT);
 
@@ -301,6 +330,10 @@ async fn library_pool(
             &candidate.tags,
             candidate.status.as_deref(),
         ) {
+            continue;
+        }
+        if skip > 0 {
+            skip -= 1;
             continue;
         }
         if candidates.len() == limit {
@@ -430,6 +463,7 @@ async fn enrich_backlog_series(
     services: &Services,
     resolution: &HashMap<String, Resolved>,
     series: &SnapshotSeries,
+    score: Option<&Score>,
 ) -> (Candidate, Option<DateTime<Utc>>) {
     let resolved = series
         .external_ids
@@ -452,6 +486,10 @@ async fn enrich_backlog_series(
     // Backbone backfill before the filter pass, so dump genres/status
     // participate in matching.
     backfill_from_mangabaka(services, &mut candidate).await;
+    if let Some(score) = score {
+        candidate.score = Some(round3(score.affinity));
+        candidate.because = score.anchors.clone();
+    }
     (candidate, as_of)
 }
 
@@ -561,6 +599,8 @@ fn enriched_candidate(
         volume_coverage: resolved.volume_coverage.clone(),
         chapter_coverage: resolved.chapter_coverage.clone(),
         enrichment: Enrichment::Full,
+        score: None,
+        because: Vec::new(),
     }
 }
 
@@ -583,6 +623,8 @@ fn codex_only_candidate(series: &SnapshotSeries) -> Candidate {
         volume_coverage: Vec::new(),
         chapter_coverage: Vec::new(),
         enrichment: Enrichment::None,
+        score: None,
+        because: Vec::new(),
     }
 }
 
@@ -605,6 +647,8 @@ fn catalog_candidate(detail: &SeriesDetail, external_ids: &[ExternalId]) -> Cand
         volume_coverage: Vec::new(),
         chapter_coverage: Vec::new(),
         enrichment: Enrichment::Full,
+        score: None,
+        because: Vec::new(),
     }
 }
 
@@ -688,6 +732,11 @@ fn union_strings(a: &[String], b: &[String]) -> Vec<String> {
 /// Whether the catalog has items beyond `page`.
 fn page_has_more(page: u32, total: i64) -> bool {
     (i64::from(page) + 1) * i64::from(CATALOG_PAGE_SIZE) < total
+}
+
+/// Scores ship rounded: three decimals is all the ordering signal there is.
+fn round3(x: f64) -> f64 {
+    (x * 1000.0).round() / 1000.0
 }
 
 fn oldest(current: Option<DateTime<Utc>>, new: DateTime<Utc>) -> Option<DateTime<Utc>> {

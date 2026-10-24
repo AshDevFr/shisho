@@ -34,6 +34,10 @@ pub struct GetCandidatesParams {
     /// Over-provision target; default 40, capped at 100.
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Ranked candidates to skip: pass the previous call's offset + count to
+    /// see the next slice when 'truncated' is true.
+    #[serde(default)]
+    pub offset: Option<usize>,
 }
 
 #[tool_router(router = candidates_router, vis = "pub(crate)")]
@@ -41,7 +45,7 @@ impl McpService {
     #[tool(
         name = "get_candidates",
         annotations(read_only_hint = true, open_world_hint = true),
-        description = "Generate recommendation candidates from one of two pools: 'library' (series the caller owns but has never read - the primary pool) or 'acquirable' (well-rated catalog series the caller does not own). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
+        description = "Generate recommendation candidates from one of two pools: 'library' (series the caller owns but has never read - the primary pool) or 'acquirable' (well-rated catalog series the caller does not own). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Library candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
     )]
     async fn get_candidates(
         &self,
@@ -56,6 +60,7 @@ impl McpService {
             status: params.status,
             libraries: params.libraries,
             limit: params.limit,
+            offset: params.offset,
         };
         match candidates::get_candidates(services, &user, params.pool, &filters).await {
             Ok(set) => tool_json(&set),

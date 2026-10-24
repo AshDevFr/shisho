@@ -710,3 +710,139 @@ async fn acquirable_pool_walks_past_the_first_catalog_page() {
     assert_eq!(titles, vec!["Top Rated Pick", "Second Page Pick"]);
     assert!(!set.truncated, "the catalog was exhausted");
 }
+
+/// One Codex `/series/full` row.
+fn codex_row(id: &str, title: &str, genres: &[&str], books: i64, unread: i64) -> serde_json::Value {
+    serde_json::json!({
+        "id": id, "libraryId": "lib", "libraryName": "Manga",
+        "bookCount": books, "unreadCount": unread,
+        "metadata": { "title": title, "summary": null, "status": "ended", "year": 2020,
+                      "publisher": null, "totalVolumeCount": books, "totalChapterCount": null },
+        "genres": genres.iter().enumerate()
+            .map(|(i, g)| serde_json::json!({ "id": format!("g-{i}"), "name": g }))
+            .collect::<Vec<_>>(),
+        "tags": [],
+        "externalIds": [{ "id": format!("x-{id}"), "seriesId": id, "source": "plugin:mangabaka",
+                          "externalId": id.trim_start_matches(|c: char| !c.is_ascii_digit()),
+                          "externalUrl": null }],
+    })
+}
+
+/// A Fantasy reader: two Fantasy favourites, one disliked Horror read, and a
+/// backlog that lists Horror before Fantasy.
+async fn mount_fantasy_reader(codex: &MockServer, tsundoku: &MockServer, backlog: usize) {
+    let mut rows = vec![
+        codex_row("s1", "Loved Fantasy One", &["Fantasy", "Adventure"], 10, 0),
+        codex_row("s2", "Loved Fantasy Two", &["Fantasy"], 8, 0),
+        codex_row("s3", "Disliked Horror", &["Horror"], 5, 0),
+        codex_row("s4", "Unread Horror", &["Horror"], 6, 6),
+        codex_row("s5", "Unread Fantasy", &["Fantasy"], 7, 7),
+    ];
+    for i in 0..backlog {
+        let id = format!("s{}", 100 + i);
+        rows.push(codex_row(
+            &id,
+            &format!("Unread Romance {i}"),
+            &["Romance"],
+            4,
+            4,
+        ));
+    }
+    let total = rows.len();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": total, "totalPages": 1
+        })))
+        .mount(codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [
+                { "id": "r1", "seriesId": "s1", "rating": 92, "notes": null },
+                { "id": "r2", "seriesId": "s2", "rating": 88, "notes": null },
+                { "id": "r3", "seriesId": "s3", "rating": 20, "notes": null },
+            ]})),
+        )
+        .mount(codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(tsundoku)
+        .await;
+}
+
+#[tokio::test]
+async fn library_pool_ranks_by_affinity_with_anchors() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_fantasy_reader(&codex, &tsundoku, 0).await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, fresh_db().await),
+        &user(),
+        Pool::Library,
+        &Filters::default(),
+    )
+    .await
+    .expect("library pool");
+
+    let titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(titles, vec!["Unread Fantasy", "Unread Horror"]);
+    let top = &set.candidates[0];
+    assert!(top.score.unwrap() > set.candidates[1].score.unwrap());
+    let anchor = top.because.first().expect("an anchor");
+    assert!(anchor.title.starts_with("Loved Fantasy"));
+    assert!(anchor.your_rating.unwrap() >= 88);
+    assert_eq!(anchor.shared, vec!["Fantasy"]);
+    assert!(
+        set.candidates[1].because.is_empty(),
+        "nothing the reader liked shares Horror"
+    );
+}
+
+#[tokio::test]
+async fn library_pool_pages_with_offset() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    mount_fantasy_reader(&codex, &tsundoku, 20).await;
+    let services = services(&codex, &tsundoku, fresh_db().await);
+
+    let first = get_candidates(
+        &services,
+        &user(),
+        Pool::Library,
+        &Filters {
+            limit: Some(5),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let second = get_candidates(
+        &services,
+        &user(),
+        Pool::Library,
+        &Filters {
+            limit: Some(5),
+            offset: Some(5),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(first.candidates[0].title, "Unread Fantasy");
+    assert!(first.truncated && second.truncated);
+    let first_titles: Vec<&str> = first.candidates.iter().map(|c| c.title.as_str()).collect();
+    for c in &second.candidates {
+        assert!(
+            !first_titles.contains(&c.title.as_str()),
+            "pages overlap on {}",
+            c.title
+        );
+    }
+    assert_eq!(second.candidates.len(), 5);
+}

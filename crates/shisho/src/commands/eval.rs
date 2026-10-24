@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
+use shisho_services::affinity::AffinityRanker;
 use shisho_services::eval::{self, EvalReport, Ranker, SnapshotOrder};
 use shisho_services::library_snapshot::{LibrarySnapshot, SnapshotSeries};
 
@@ -30,7 +31,7 @@ pub async fn run(
         println!("library saved to {}", path.display());
     }
 
-    let rankers: Vec<Box<dyn Ranker>> = vec![Box::new(SnapshotOrder)];
+    let rankers: Vec<Box<dyn Ranker>> = vec![Box::new(SnapshotOrder), Box::new(AffinityRanker)];
     let reports: Vec<EvalReport> = rankers
         .iter()
         .filter_map(|ranker| eval::evaluate(&snapshot, ranker.as_ref()))

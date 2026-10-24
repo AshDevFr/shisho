@@ -1304,3 +1304,54 @@ async fn acquirable_diversity_lifts_a_different_genre_into_the_top_three() {
         .collect();
     assert!(top3.contains(&"The Romance"), "{top3:?}");
 }
+
+#[tokio::test]
+async fn outcome_recorded_for_an_unowned_series_steers_the_backlog() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    // No ratings and nothing finished: without outcomes this is a cold start
+    // and library order (Horror first) would stand.
+    let rows = vec![
+        codex_row("s5001", "Unread Horror", &["Horror"], 4, 4),
+        codex_row("s5002", "Unread Fantasy", &["Fantasy"], 4, 4),
+    ];
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": 2, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [] })),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(&tsundoku)
+        .await;
+    let db = fresh_db().await;
+    // The user loved Frieren (a Fantasy series in the dump they do not own).
+    seed_row(&db, Some(112092), None, false, None, Some("loved")).await;
+    let http = reqwest::Client::new();
+    let services = Services::new(
+        CodexClient::new(&codex.uri(), http.clone()),
+        TsundokuClient::new(&tsundoku.uri(), Secret::new("admin-token"), http),
+        mangabaka_with_dump().await,
+        db,
+        &CacheConfig::default(),
+        false,
+    );
+
+    let set = get_candidates(&services, &user(), Pool::Library, &Filters::default())
+        .await
+        .unwrap();
+    assert_eq!(set.candidates[0].title, "Unread Fantasy");
+    let anchor = &set.candidates[0].because[0];
+    assert_eq!(anchor.title, "Sousou no Frieren");
+    assert_eq!(anchor.your_outcome.as_deref(), Some("loved"));
+}

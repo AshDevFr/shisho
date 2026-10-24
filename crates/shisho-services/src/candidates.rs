@@ -24,14 +24,18 @@ use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 
-use crate::affinity::{Anchor, Score, TasteVector, by_mangabaka_id, franchise_adjustment};
+use crate::affinity::{
+    Anchor, OutcomeSignal, Score, TasteVector, by_mangabaka_id, franchise_adjustment,
+};
 use crate::library_snapshot::{self, CodexIndex, SnapshotSeries};
 use crate::read_state::ReadState;
 use crate::tsundoku_cache::Resolved;
+use crate::verdicts::Outcome;
 use crate::verdicts::VerdictIndex;
 use crate::{Services, UserCtx};
 use shisho_cache::SwrError;
 use shisho_codex::CodexError;
+use shisho_db::repos::verdicts::{self as verdict_repo, verdict_series_token};
 use shisho_ids::{ExternalId, Provider};
 use shisho_mangabaka::offline::DiscoverQuery;
 use shisho_mangabaka::{ContentRating, SeriesMetadata};
@@ -73,6 +77,8 @@ const DISCOVER_OVERFETCH: usize = 4;
 const DISCOVER_MAX_FETCH: usize = 500;
 /// Discover pool: weight of the community rating (0-10) in the final score.
 const DISCOVER_RATING_PRIOR: f64 = 0.05;
+/// Recorded outcomes (most recent first, one per series) folded into taste.
+const OUTCOME_SIGNALS: usize = 50;
 /// Backend calls in flight per pool while enriching candidates.
 const FAN_OUT: usize = 8;
 
@@ -334,7 +340,7 @@ async fn library_pool(
     // Rank the whole eligible backlog from the snapshot's own genres and tags
     // (no backend calls), then enrich only as far as the requested page.
     // Ties, and every series on a cold start, keep the library's own order.
-    let taste = taste_for(services, &snapshot).await;
+    let taste = taste_for(services, &user.user_sub, &snapshot).await;
     let library = by_mangabaka_id(&snapshot);
     let eligible_ids: Vec<i64> = eligible
         .iter()
@@ -459,7 +465,7 @@ async fn acquirable_pool(
         .map_err(CandidatesError::Codex)?
         .value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
-    let taste = taste_for(services, &snapshot).await;
+    let taste = taste_for(services, &user.user_sub, &snapshot).await;
 
     let degraded = |source| CandidatesError::TsundokuDegraded {
         pool: Pool::Acquirable.name(),
@@ -665,7 +671,7 @@ async fn discover_pool(
         .map_err(CandidatesError::Codex)?;
     let owned_index = index_hit.value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
-    let taste = taste_for(services, &snapshot_hit.value).await;
+    let taste = taste_for(services, &user.user_sub, &snapshot_hit.value).await;
 
     let limit = filters.limit();
     let offset = filters.offset.unwrap_or(0);
@@ -782,13 +788,16 @@ async fn discover_pool(
     })
 }
 
-/// The caller's taste, with term specificity from the dump when one is
-/// loaded (rare shared tags count for more than ubiquitous ones).
+/// The caller's taste: their ratings and finished series, their recorded
+/// reading outcomes, and term specificity from the dump when one is loaded
+/// (rare shared tags count for more than ubiquitous ones).
 async fn taste_for(
     services: &Services,
+    user_sub: &str,
     snapshot: &library_snapshot::LibrarySnapshot,
 ) -> TasteVector {
-    let mut taste = TasteVector::from_snapshot(snapshot);
+    let outcomes = outcome_signals(services, user_sub, snapshot).await;
+    let mut taste = TasteVector::from_library(snapshot, &outcomes);
     if taste.is_empty() {
         return taste;
     }
@@ -805,6 +814,68 @@ async fn taste_for(
         }
     }
     taste
+}
+
+/// The caller's most recent reading outcomes, one per series (the latest
+/// wins), as taste evidence. Owned series take their metadata from the
+/// snapshot, others from the backbone; a series neither knows is skipped,
+/// and a verdict-log read failure leaves taste to ratings alone.
+async fn outcome_signals(
+    services: &Services,
+    user_sub: &str,
+    snapshot: &library_snapshot::LibrarySnapshot,
+) -> Vec<OutcomeSignal> {
+    let rows = match verdict_repo::recent_outcomes(&services.db, user_sub, None).await {
+        Ok(rows) => rows,
+        Err(err) => {
+            tracing::warn!(error = %err, "reading recorded outcomes failed; taste from ratings only");
+            return Vec::new();
+        }
+    };
+    // Oldest first, so later rows overwrite earlier ones per series.
+    let mut latest: HashMap<String, (Outcome, i64)> = HashMap::new();
+    for row in &rows {
+        if let (Some(token), Some(outcome)) = (verdict_series_token(row), row.outcome.as_deref()) {
+            latest.insert(token, (Outcome::parse(outcome), row.id));
+        }
+    }
+    let mut recent: Vec<(String, Outcome, i64)> = latest
+        .into_iter()
+        .map(|(token, (outcome, id))| (token, outcome, id))
+        .filter(|(_, outcome, _)| !matches!(outcome, Outcome::Mixed | Outcome::Other))
+        .collect();
+    recent.sort_by_key(|(_, _, id)| std::cmp::Reverse(*id));
+    recent.truncate(OUTCOME_SIGNALS);
+
+    let pending = recent.into_iter().filter_map(|(token, outcome, _)| {
+        let id = ExternalId::from_tsundoku(&token).ok()?;
+        Some(async move {
+            if let Some(owned) = snapshot.series_by_external_id(&id) {
+                return Some(OutcomeSignal {
+                    title: owned.title.clone(),
+                    codex_series_id: Some(owned.id.clone()),
+                    outcome,
+                    genres: owned.genres.clone(),
+                    tags: owned.tags.clone(),
+                    authors: owned.authors.clone(),
+                });
+            }
+            let meta = services.metadata.resolve(&id).await.ok().flatten()?;
+            Some(OutcomeSignal {
+                title: meta.title,
+                codex_series_id: None,
+                outcome,
+                genres: meta.genres,
+                tags: meta.tags,
+                authors: meta.authors,
+            })
+        })
+    });
+    futures_util::future::join_all(pending)
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// Franchise links for the given MangaBaka ids; empty (no adjustment) when

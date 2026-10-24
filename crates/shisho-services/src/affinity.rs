@@ -19,6 +19,7 @@ use serde::Serialize;
 
 use crate::library_snapshot::{LibrarySnapshot, SnapshotSeries};
 use crate::read_state::ReadState;
+use crate::verdicts::Outcome;
 
 /// The neutral rating the caller's mean is shrunk toward (Codex 1-100 scale).
 const NEUTRAL_RATING: f64 = 60.0;
@@ -38,12 +39,17 @@ const MAX_ANCHORS: usize = 2;
 #[serde(rename_all = "camelCase")]
 pub struct Anchor {
     pub title: String,
-    /// The caller's Codex series UUID.
-    pub codex_series_id: String,
+    /// The caller's Codex series UUID; absent for a series they recorded an
+    /// outcome for but do not own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_series_id: Option<String>,
     /// The caller's rating, 1-100; absent when the anchor is a completed,
     /// unrated series.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub your_rating: Option<i32>,
+    /// The reading outcome the caller recorded for it ("loved", "dropped").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub your_outcome: Option<String>,
     /// The genres and tags the candidate shares with it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub shared: Vec<String>,
@@ -64,8 +70,9 @@ pub struct Score {
 #[derive(Debug, Clone)]
 struct Source {
     title: String,
-    codex_series_id: String,
+    codex_series_id: Option<String>,
     rating: Option<i32>,
+    outcome: Option<Outcome>,
     weight: f64,
     /// Lowercased genre and tag keys.
     terms: Vec<String>,
@@ -80,8 +87,40 @@ pub struct TasteVector {
     sources: Vec<Source>,
 }
 
+/// A reading outcome the caller recorded, with the series' metadata, as
+/// taste evidence.
+#[derive(Debug, Clone)]
+pub struct OutcomeSignal {
+    pub title: String,
+    /// Set when the caller owns the series.
+    pub codex_series_id: Option<String>,
+    pub outcome: Outcome,
+    pub genres: Vec<String>,
+    pub tags: Vec<String>,
+    pub authors: Vec<String>,
+}
+
+/// How much a recorded outcome says about taste. Mixed and unrecognized
+/// outcomes say nothing either way.
+fn outcome_weight(outcome: Outcome) -> Option<f64> {
+    match outcome {
+        Outcome::Loved => Some(1.0),
+        Outcome::Liked => Some(0.5),
+        Outcome::Dropped => Some(-0.8),
+        Outcome::Dnf => Some(-0.5),
+        Outcome::Mixed | Outcome::Other => None,
+    }
+}
+
 impl TasteVector {
     pub fn from_snapshot(snapshot: &LibrarySnapshot) -> Self {
+        Self::from_library(snapshot, &[])
+    }
+
+    /// The caller's taste from their library and their recorded outcomes. A
+    /// series they rated speaks through its rating; an outcome on it is
+    /// ignored.
+    pub fn from_library(snapshot: &LibrarySnapshot, outcomes: &[OutcomeSignal]) -> Self {
         let ratings: Vec<f64> = snapshot
             .series
             .iter()
@@ -97,13 +136,33 @@ impl TasteVector {
                 let weight = series_weight(s, mean)?;
                 Some(Source {
                     title: s.title.clone(),
-                    codex_series_id: s.id.clone(),
+                    codex_series_id: Some(s.id.clone()),
                     rating: s.rating,
+                    outcome: None,
                     weight,
                     terms: term_keys(&s.genres, &s.tags),
                     authors: s.authors.clone(),
                 })
             })
+            .chain(outcomes.iter().filter_map(|o| {
+                let rated = o
+                    .codex_series_id
+                    .as_deref()
+                    .and_then(|id| snapshot.series_by_uuid(id))
+                    .is_some_and(|s| s.rating.is_some());
+                if rated {
+                    return None;
+                }
+                Some(Source {
+                    title: o.title.clone(),
+                    codex_series_id: o.codex_series_id.clone(),
+                    rating: None,
+                    outcome: Some(o.outcome),
+                    weight: outcome_weight(o.outcome)?,
+                    terms: term_keys(&o.genres, &o.tags),
+                    authors: o.authors.clone(),
+                })
+            }))
             .collect();
 
         let mut sums: HashMap<String, (f64, usize)> = HashMap::new();
@@ -191,6 +250,7 @@ impl TasteVector {
                     title: source.title.clone(),
                     codex_series_id: source.codex_series_id.clone(),
                     your_rating: source.rating,
+                    your_outcome: source.outcome.map(|o| o.as_str().to_owned()),
                     shared: vec![author],
                     relation: Some("same author as".to_owned()),
                 },
@@ -264,6 +324,7 @@ impl TasteVector {
                         title: source.title.clone(),
                         codex_series_id: source.codex_series_id.clone(),
                         your_rating: source.rating,
+                        your_outcome: source.outcome.map(|o| o.as_str().to_owned()),
                         shared,
                         relation: None,
                     },
@@ -323,8 +384,9 @@ pub fn franchise_adjustment(
                     FRANCHISE_BOOST,
                     Some(Anchor {
                         title: earlier.title.clone(),
-                        codex_series_id: earlier.id.clone(),
+                        codex_series_id: Some(earlier.id.clone()),
                         your_rating: earlier.rating,
+                        your_outcome: None,
                         shared: Vec::new(),
                         relation: Some(relation.to_owned()),
                     }),
@@ -586,6 +648,54 @@ mod tests {
         let anchor = &with.anchors[0];
         assert_eq!(anchor.relation.as_deref(), Some("same author as"));
         assert_eq!(anchor.shared, strings(&["kanehito yamada"]));
+    }
+
+    fn outcome(title: &str, outcome: Outcome, genres: &[&str]) -> OutcomeSignal {
+        OutcomeSignal {
+            title: title.into(),
+            codex_series_id: None,
+            outcome,
+            genres: strings(genres),
+            tags: Vec::new(),
+            authors: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn outcome_dropped_pushes_its_genre_negative() {
+        let library = LibrarySnapshot::from_series(vec![]);
+        let taste = TasteVector::from_library(
+            &library,
+            &[outcome("Gorefest", Outcome::Dropped, &["Horror"])],
+        );
+        assert!(taste.term_weight("Horror") < 0.0);
+        let horror = taste.score(&strings(&["Horror"]), &[]);
+        let neutral = taste.score(&strings(&["Sports"]), &[]);
+        assert!(horror.affinity < neutral.affinity);
+    }
+
+    #[test]
+    fn outcome_loved_anchors_with_the_outcome() {
+        let library = LibrarySnapshot::from_series(vec![]);
+        let taste = TasteVector::from_library(
+            &library,
+            &[outcome("Kimi ni Todoke", Outcome::Loved, &["Romance"])],
+        );
+        let score = taste.score(&strings(&["Romance"]), &[]);
+        let anchor = &score.anchors[0];
+        assert_eq!(anchor.title, "Kimi ni Todoke");
+        assert_eq!(anchor.your_outcome.as_deref(), Some("loved"));
+        assert_eq!(anchor.codex_series_id, None);
+    }
+
+    #[test]
+    fn outcome_yields_to_a_rating_of_the_same_series() {
+        let rated = series("s1", &["Fantasy"], &[], ReadState::Completed, Some(95));
+        let library = LibrarySnapshot::from_series(vec![rated]);
+        let mut dropped = outcome("s1", Outcome::Dropped, &["Fantasy"]);
+        dropped.codex_series_id = Some("s1".into());
+        let taste = TasteVector::from_library(&library, &[dropped]);
+        assert!(taste.term_weight("Fantasy") > 0.0, "the 95 rating wins");
     }
 
     #[test]

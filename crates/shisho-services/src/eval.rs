@@ -113,6 +113,76 @@ pub fn evaluate(snapshot: &LibrarySnapshot, ranker: &dyn Ranker) -> Option<EvalR
     })
 }
 
+/// Where a ranker places series the caller later judged, for owned series
+/// with a recorded outcome: each is hidden (unrated, untouched) in turn and
+/// ranked within the backlog. A ranker that tracks taste puts the liked ones
+/// high and the dropped ones low.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutcomeReport {
+    pub ranker: String,
+    pub liked: usize,
+    pub disliked: usize,
+    /// Mean rank fraction (0 = first, 1 = last) of loved and liked series.
+    pub liked_rank_fraction: f64,
+    /// Mean rank fraction of dropped and did-not-finish series.
+    pub disliked_rank_fraction: f64,
+}
+
+/// Replay recorded outcomes (`(codex series id, outcome)`) through `ranker`.
+/// `None` when no owned series carries a decisive outcome.
+pub fn evaluate_outcomes(
+    snapshot: &LibrarySnapshot,
+    outcomes: &[(String, crate::verdicts::Outcome)],
+    ranker: &dyn Ranker,
+) -> Option<OutcomeReport> {
+    use crate::verdicts::Outcome;
+    let mut liked: Vec<f64> = Vec::new();
+    let mut disliked: Vec<f64> = Vec::new();
+    for (series_id, outcome) in outcomes {
+        let bucket = match outcome {
+            Outcome::Loved | Outcome::Liked => &mut liked,
+            Outcome::Dropped | Outcome::Dnf => &mut disliked,
+            Outcome::Mixed | Outcome::Other => continue,
+        };
+        if snapshot.series_by_uuid(series_id).is_none() {
+            continue;
+        }
+        let masked = mask(snapshot, series_id);
+        let backlog: Vec<&SnapshotSeries> = masked
+            .series
+            .iter()
+            .filter(|s| s.read_state == ReadState::Untouched)
+            .collect();
+        let order = ranker.rank(&masked, &backlog);
+        let Some(position) = order.iter().position(|&i| backlog[i].id == *series_id) else {
+            continue;
+        };
+        let fraction = if backlog.len() <= 1 {
+            0.0
+        } else {
+            position as f64 / (backlog.len() - 1) as f64
+        };
+        bucket.push(fraction);
+    }
+    if liked.is_empty() && disliked.is_empty() {
+        return None;
+    }
+    let mean = |v: &[f64]| {
+        if v.is_empty() {
+            f64::NAN
+        } else {
+            v.iter().sum::<f64>() / v.len() as f64
+        }
+    };
+    Some(OutcomeReport {
+        ranker: ranker.name().to_owned(),
+        liked: liked.len(),
+        disliked: disliked.len(),
+        liked_rank_fraction: mean(&liked),
+        disliked_rank_fraction: mean(&disliked),
+    })
+}
+
 /// The library with `held` hidden: unrated, notes dropped, and untouched.
 fn mask(snapshot: &LibrarySnapshot, held: &str) -> LibrarySnapshot {
     let series = snapshot
@@ -243,6 +313,29 @@ mod tests {
         let back: Vec<SnapshotSeries> = serde_json::from_str(&json).unwrap();
         assert_eq!(back[0].external_ids[0].canonical_key(), "mal:42");
         assert_eq!(back[0].rating, Some(95));
+    }
+
+    #[test]
+    fn eval_outcome_replay_separates_liked_from_disliked() {
+        use crate::verdicts::Outcome;
+        let mut series_list: Vec<SnapshotSeries> = (0..8)
+            .map(|i| series(&format!("u{i}"), ReadState::Untouched, None))
+            .collect();
+        series_list.push(series("good", ReadState::Completed, None));
+        series_list.push(series("bad", ReadState::Completed, None));
+        let lib = LibrarySnapshot::from_series(series_list);
+        let report = evaluate_outcomes(
+            &lib,
+            &[
+                ("good".into(), Outcome::Loved),
+                ("bad".into(), Outcome::Dropped),
+            ],
+            &Oracle("good"),
+        )
+        .unwrap();
+        assert_eq!((report.liked, report.disliked), (1, 1));
+        assert_eq!(report.liked_rank_fraction, 0.0);
+        assert!(report.disliked_rank_fraction > 0.0);
     }
 
     #[test]

@@ -4194,6 +4194,7 @@ dependencies = [
  "shisho-config",
  "shisho-crypto",
  "shisho-db",
+ "shisho-ids",
  "shisho-mangabaka",
  "shisho-mcp",
  "shisho-services",

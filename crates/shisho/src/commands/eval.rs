@@ -13,6 +13,7 @@ use anyhow::{Context, bail};
 use shisho_services::affinity::AffinityRanker;
 use shisho_services::eval::{self, EvalReport, Ranker, SnapshotOrder};
 use shisho_services::library_snapshot::{LibrarySnapshot, SnapshotSeries};
+use shisho_services::verdicts::Outcome;
 
 pub async fn run(
     config_path: PathBuf,
@@ -20,8 +21,8 @@ pub async fn run(
     fixture: Option<PathBuf>,
     save_fixture: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let snapshot = match (fixture, user) {
-        (Some(path), _) => load_fixture(&path)?,
+    let (snapshot, outcomes) = match (fixture, user) {
+        (Some(path), _) => (load_fixture(&path)?, Vec::new()),
         (None, Some(user)) => live_snapshot(&config_path, &user).await?,
         (None, None) => bail!("pass --user <id|email|codex-sub> or --fixture <path>"),
     };
@@ -40,6 +41,24 @@ pub async fn run(
         bail!("the library has no ratings to hold out; rate some series in Codex first");
     }
     print_table(&snapshot, &reports);
+
+    let outcome_reports: Vec<_> = rankers
+        .iter()
+        .filter_map(|ranker| eval::evaluate_outcomes(&snapshot, &outcomes, ranker.as_ref()))
+        .collect();
+    if let Some(first) = outcome_reports.first() {
+        println!(
+            "\nrecorded outcomes on owned series: {} liked, {} dropped (rank fraction, lower is higher)",
+            first.liked, first.disliked
+        );
+        println!("{:<18} {:>12} {:>12}", "ranker", "liked", "dropped");
+        for r in &outcome_reports {
+            println!(
+                "{:<18} {:>12.3} {:>12.3}",
+                r.ranker, r.liked_rank_fraction, r.disliked_rank_fraction
+            );
+        }
+    }
     Ok(())
 }
 
@@ -51,7 +70,11 @@ fn load_fixture(path: &Path) -> anyhow::Result<LibrarySnapshot> {
     Ok(LibrarySnapshot::from_series(series))
 }
 
-async fn live_snapshot(config_path: &Path, user: &str) -> anyhow::Result<LibrarySnapshot> {
+/// The user's library and their recorded outcomes on owned series.
+async fn live_snapshot(
+    config_path: &Path,
+    user: &str,
+) -> anyhow::Result<(LibrarySnapshot, Vec<(String, Outcome)>)> {
     let cfg = shisho_config::load(config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
     super::init_tracing(&cfg);
@@ -83,7 +106,19 @@ async fn live_snapshot(config_path: &Path, user: &str) -> anyhow::Result<Library
         .get(&ctx.user_sub, &ctx.credential)
         .await
         .context("reading the library from Codex")?;
-    Ok((*snapshot.value).clone())
+    let snapshot = (*snapshot.value).clone();
+
+    // The latest outcome per owned series, keyed by its Codex id.
+    let mut outcomes: std::collections::HashMap<String, Outcome> = Default::default();
+    for row in shisho_db::repos::verdicts::recent_outcomes(&db, &ctx.user_sub, None).await? {
+        let owned = shisho_db::repos::verdicts::verdict_series_token(&row)
+            .and_then(|token| shisho_ids::ExternalId::from_tsundoku(&token).ok())
+            .and_then(|id| snapshot.series_by_external_id(&id).map(|s| s.id.clone()));
+        if let (Some(series_id), Some(outcome)) = (owned, row.outcome.as_deref()) {
+            outcomes.insert(series_id, Outcome::parse(outcome));
+        }
+    }
+    Ok((snapshot, outcomes.into_iter().collect()))
 }
 
 fn print_table(snapshot: &LibrarySnapshot, reports: &[EvalReport]) {

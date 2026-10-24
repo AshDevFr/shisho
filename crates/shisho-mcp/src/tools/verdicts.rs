@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use super::{tool_error, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
-use shisho_db::repos::reconciliation;
 use shisho_db::repos::verdicts::{self, NewVerdict, RetractionReason};
 use shisho_services::lookup::parse_known_id;
 
@@ -87,7 +86,8 @@ struct VerdictAck {
 pub struct RecordFeedbackParams {
     /// The series' external ID in any known notation.
     pub id: String,
-    /// What happened (e.g. "loved", "liked", "dropped", "mixed").
+    /// What happened: "loved", "liked", "mixed", "dropped", or "dnf" (did not
+    /// finish). Other text is stored as "other" with the text kept in notes.
     pub outcome: String,
     /// Rating for the series, 1-100 (Codex displays 1-10 with one decimal).
     /// Recorded as evidence; the Codex push is deferred (see codexGap).
@@ -114,9 +114,6 @@ struct FeedbackAck {
     #[serde(skip_serializing_if = "Option::is_none")]
     reconciliation_flags_resolved: Option<u64>,
 }
-
-/// Session ID for feedback rows, which arrive outside any recommend run.
-const FEEDBACK_SESSION: &str = "feedback";
 
 #[tool_router(router = verdicts_router, vis = "pub(crate)")]
 impl McpService {
@@ -204,54 +201,29 @@ impl McpService {
             )));
         }
 
-        // Local outcome first — always, and idempotently: retrying the same
-        // feedback must not grow the log.
-        let history = verdicts::history(&self.state.db, &user.user_sub, [&external_id])
-            .await
-            .map_err(db_error)?;
-        let duplicate = history.last().filter(|row| {
-            row.outcome.as_deref() == Some(params.outcome.as_str()) && row.notes == params.notes
-        });
-        let verdict_id = match duplicate {
-            Some(row) => row.id,
-            None => {
-                verdicts::insert(
-                    &self.state.db,
-                    &user.user_sub,
-                    NewVerdict {
-                        external_id: Some(external_id.clone()),
-                        session_id: FEEDBACK_SESSION.into(),
-                        tier: "feedback".into(),
-                        rationale: "user feedback".into(),
-                        verified: false,
-                        retracted: false,
-                        retraction_reason: None,
-                        outcome: Some(params.outcome.clone()),
-                        notes: params.notes.clone(),
-                    },
-                )
-                .await
-                .map_err(db_error)?
-                .id
-            }
-        };
-
-        // An outcome answers any pending reconciliation question on the series.
-        let flags_resolved =
-            reconciliation::resolve_for_series(&self.state.db, &user.user_sub, [&external_id])
-                .await
-                .map_err(db_error)?;
+        // Local outcome first, always, and idempotently: retrying the same
+        // feedback must not grow the log. The outcome also answers any
+        // pending reconciliation question on the series.
+        let ack = shisho_services::verdicts::record_feedback(
+            &self.state.db,
+            &user.user_sub,
+            &external_id,
+            &params.outcome,
+            params.notes,
+        )
+        .await
+        .map_err(db_error)?;
 
         // The Codex rating push stays deferred (N-RATINGWRITE): name the gap
         // when a rating was supplied, but never lose the outcome.
         let codex_gap = params.rating.map(|_| RATING_DEFERRED_GAP.to_owned());
 
         tool_json(&FeedbackAck {
-            verdict_id,
-            outcome: params.outcome,
+            verdict_id: ack.row.id,
+            outcome: ack.row.outcome.unwrap_or_default(),
             pushed_to_codex: false,
             codex_gap,
-            reconciliation_flags_resolved: (flags_resolved > 0).then_some(flags_resolved),
+            reconciliation_flags_resolved: (ack.flags_resolved > 0).then_some(ack.flags_resolved),
         })
     }
 }

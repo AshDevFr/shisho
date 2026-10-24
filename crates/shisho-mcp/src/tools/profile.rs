@@ -13,6 +13,7 @@ use super::{tool_error, tool_json};
 use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_db::repos::profiles::{self, PendingProposal, ProfileError, ProfileView};
+use shisho_db::repos::verdicts::verdict_series_token;
 use shisho_db::repos::{reconciliation, verdicts};
 
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
@@ -107,7 +108,7 @@ impl McpService {
             let feedback = rows
                 .into_iter()
                 .map(|row| FeedbackView {
-                    id: series_id(&row),
+                    id: verdict_series_token(&row),
                     outcome: row.outcome.unwrap_or_default(),
                     notes: row.notes,
                     recorded_at: row.created_at.to_utc(),
@@ -119,7 +120,7 @@ impl McpService {
                 .map_err(db_error)?
                 .into_iter()
                 .map(|(flag, row)| ReconciliationView {
-                    id: series_id(&row),
+                    id: verdict_series_token(&row),
                     tier: row.tier,
                     recommended_at: row.created_at.to_utc(),
                     detected_at: flag.detected_at.to_utc(),
@@ -169,15 +170,6 @@ impl McpService {
             proposal,
             status: "pending",
         })
-    }
-}
-
-/// Canonical `provider:id` of a verdict row, when it carries one.
-fn series_id(row: &shisho_db::entities::verdict::Model) -> Option<String> {
-    match (&row.provider, &row.external_id, row.mangabaka_id) {
-        (Some(provider), Some(id), _) => Some(format!("{provider}:{id}")),
-        (_, _, Some(mangabaka)) => Some(format!("mangabaka:{mangabaka}")),
-        _ => None,
     }
 }
 

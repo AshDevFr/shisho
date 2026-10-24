@@ -25,13 +25,9 @@ use super::error::AppError;
 use crate::middleware::{CurrentScope, require_scope};
 use shisho_auth::keys::Resource;
 use shisho_db::entities::verdict;
-use shisho_db::repos::verdicts::{NewVerdict, SeriesKey};
-use shisho_db::repos::{reconciliation, users, verdicts};
+use shisho_db::repos::verdicts::verdict_series_token;
+use shisho_db::repos::{users, verdicts};
 use shisho_ids::ExternalId;
-
-/// Session id for feedback rows recorded outside a recommend run (matches the
-/// MCP `record_feedback` tool).
-const FEEDBACK_SESSION: &str = "feedback";
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -142,19 +138,9 @@ async fn codex_user_sub(state: &AppState, scope: &CurrentScope) -> Result<String
     })
 }
 
-/// Canonical `provider:id` (or `mangabaka:<id>`) of a verdict row, when it
-/// carries a series identity.
-fn series_id(row: &verdict::Model) -> Option<String> {
-    match SeriesKey::of(row) {
-        Some(SeriesKey::Mangabaka(id)) => Some(format!("mangabaka:{id}")),
-        Some(SeriesKey::Pair(provider, external)) => Some(format!("{provider}:{external}")),
-        None => None,
-    }
-}
-
 fn to_dto(row: verdict::Model) -> VerdictDto {
     VerdictDto {
-        series_id: series_id(&row),
+        series_id: verdict_series_token(&row),
         id: row.id,
         tier: row.tier,
         rationale: row.rationale,
@@ -452,7 +438,7 @@ pub async fn record_outcome(
         .ok_or_else(|| AppError::NotFound(format!("verdict {id} not found")))?;
 
     // The feedback row needs the target's series identity to join.
-    let Some(token) = series_id(&target) else {
+    let Some(token) = verdict_series_token(&target) else {
         return Err(AppError::Conflict(
             "this verdict has no series identity to attach an outcome to".into(),
         ));
@@ -460,30 +446,19 @@ pub async fn record_outcome(
     let external_id = ExternalId::from_tsundoku(&token)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rebuilding series id {token}: {e}")))?;
 
-    let row = verdicts::insert(
+    // One write path with the MCP tool: repeats are no-ops, the outcome is
+    // normalized, and it answers any pending reconciliation question.
+    let ack = shisho_services::verdicts::record_feedback(
         &state.db,
         &sub,
-        NewVerdict {
-            external_id: Some(external_id.clone()),
-            session_id: FEEDBACK_SESSION.into(),
-            tier: FEEDBACK_SESSION.into(),
-            rationale: "outcome recorded in the web UI".into(),
-            verified: false,
-            retracted: false,
-            retraction_reason: None,
-            outcome: Some(req.outcome),
-            notes: req.notes,
-        },
+        &external_id,
+        &req.outcome,
+        req.notes,
     )
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
 
-    // An outcome answers any pending reconciliation question on the series.
-    reconciliation::resolve_for_series(&state.db, &sub, [&external_id])
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let mut dto = to_dto(row);
+    let mut dto = to_dto(ack.row);
     if let Some(services) = state.services.as_ref() {
         let codex_index = codex_external_index(&state, &scope).await;
         enrich(
@@ -661,6 +636,29 @@ mod tests {
             .unwrap();
         assert_eq!(all.len(), 2, "original + appended feedback");
         assert!(all.iter().any(|r| r.id == id && r.outcome.is_none()));
+    }
+
+    #[tokio::test]
+    async fn recording_the_same_outcome_twice_appends_one_feedback_row() {
+        let (app, state) = app().await;
+        let id = seed(&state, "s1", "S", "mangabaka:1").await;
+
+        for outcome in ["loved", "Loved"] {
+            let resp = app
+                .clone()
+                .oneshot(post_json(
+                    &format!("/api/v1/verdicts/{id}/outcome"),
+                    serde_json::json!({"outcome": outcome, "notes": "the art"}),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::CREATED);
+        }
+
+        let all = shisho_db::repos::verdicts::list_for_user(&state.db, SUB)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 2, "original + one feedback row, not two");
     }
 
     #[tokio::test]

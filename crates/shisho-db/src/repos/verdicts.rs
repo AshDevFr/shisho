@@ -204,6 +204,21 @@ impl SeriesKey {
             _ => None,
         }
     }
+
+    /// The `provider:id` token this key renders as on every surface.
+    pub fn token(&self) -> String {
+        match self {
+            SeriesKey::Mangabaka(id) => format!("mangabaka:{id}"),
+            SeriesKey::Pair(provider, external) => format!("{provider}:{external}"),
+        }
+    }
+}
+
+/// The series token of a verdict row (`mangabaka:<id>` when the row carries a
+/// MangaBaka id, else its `provider:id`), so the MCP tools and the web UI name
+/// the same verdict the same way.
+pub fn verdict_series_token(row: &verdict::Model) -> Option<String> {
+    SeriesKey::of(row).map(|key| key.token())
 }
 
 /// The caller's full verdict log, oldest first — the web UI's working set

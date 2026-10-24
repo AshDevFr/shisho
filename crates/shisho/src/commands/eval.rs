@@ -43,6 +43,19 @@ pub async fn run(
     }
     print_table(&snapshot, &reports);
 
+    let tuning = shisho_services::tuning::tune(&snapshot);
+    match (&tuning.baseline, &tuning.best) {
+        (Some(base), Some(best)) if tuning.tuned => println!(
+            "\ntuning: this library would rank with {:?} (rank fraction {:.3} vs {:.3} with the defaults)",
+            tuning.params, best.mean_rank_fraction, base.mean_rank_fraction
+        ),
+        (Some(_), _) => println!("\ntuning: no parameter set beats the defaults on this library"),
+        _ => println!(
+            "\ntuning: fewer than {} ratings; this library ranks with the defaults",
+            shisho_services::tuning::MIN_RATINGS
+        ),
+    }
+
     let outcome_reports: Vec<_> = rankers
         .iter()
         .filter_map(|ranker| eval::evaluate_outcomes(&snapshot, &outcomes, ranker.as_ref()))

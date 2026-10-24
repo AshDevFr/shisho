@@ -5,6 +5,7 @@
 pub mod profiles;
 pub mod reconciliation;
 pub mod scope;
+pub mod taste_tuning;
 pub mod users;
 pub mod verdicts;
 

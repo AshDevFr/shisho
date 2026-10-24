@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::library_snapshot::{LibrarySnapshot, SnapshotSeries};
 use crate::read_state::ReadState;
@@ -83,11 +83,17 @@ struct Source {
 
 /// The knobs of the taste fold, so `shisho eval` can compare settings. The
 /// defaults are what the candidate pools use.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TasteParams {
     /// A rating's contribution is measured from this point on the 1-100
-    /// scale; `None` uses the caller's own scale (see [`rating_origin`]).
+    /// scale; `None` uses the caller's own scale (see [`RatingScale`]).
     pub rating_origin: Option<f64>,
+    /// On the caller's own scale, how many standard deviations below their
+    /// mean the neutral point sits (0: the mean itself).
+    pub origin_sd: f64,
+    /// Weigh terms by how specific they are within the caller's library.
+    pub library_specificity: bool,
     /// Rating points per unit of contribution.
     pub rating_spread: f64,
     /// Contribution of a completed, unrated series.
@@ -105,6 +111,8 @@ impl Default for TasteParams {
     fn default() -> Self {
         Self {
             rating_origin: None,
+            origin_sd: 1.0,
+            library_specificity: true,
             rating_spread: RATING_SPREAD,
             completed_unrated: COMPLETED_UNRATED,
             in_progress: 0.0,
@@ -174,7 +182,7 @@ impl TasteVector {
             .collect();
         let origin = params
             .rating_origin
-            .unwrap_or_else(|| RatingScale::of(&ratings).origin);
+            .unwrap_or_else(|| RatingScale::with_sd(&ratings, params.origin_sd).origin);
 
         let sources: Vec<Source> = snapshot
             .series
@@ -282,10 +290,9 @@ impl TasteVector {
     }
 
     /// [`Self::apply_specificity`] with the caller's own library as the
-    /// corpus: a term most of their shelf carries ("Fantasy" on two thirds of
-    /// it) separates nothing, a rare one does. Measured on one library this
-    /// beat counts from the full MangaBaka dump, which also misses many
-    /// Codex tag names.
+    /// corpus: a term most of their shelf carries separates nothing, a rare
+    /// one does. The MangaBaka dump is not used as the corpus because it
+    /// misses many Codex tag names.
     pub fn apply_library_specificity(&mut self, snapshot: &LibrarySnapshot) {
         let mut counts: HashMap<String, i64> = HashMap::new();
         for series in &snapshot.series {
@@ -508,6 +515,12 @@ pub struct RatingScale {
 
 impl RatingScale {
     pub fn of(ratings: &[f64]) -> Self {
+        Self::with_sd(ratings, 1.0)
+    }
+
+    /// The scale with the neutral point `origin_sd` standard deviations below
+    /// the mean (the floor applies whenever the offset is non-zero).
+    pub fn with_sd(ratings: &[f64], origin_sd: f64) -> Self {
         let n = ratings.len() as f64;
         let mean =
             (ratings.iter().sum::<f64>() + NEUTRAL_RATING * MEAN_SHRINKAGE) / (n + MEAN_SHRINKAGE);
@@ -519,7 +532,7 @@ impl RatingScale {
         };
         Self {
             mean,
-            origin: mean - sd.max(MIN_RATING_SD),
+            origin: mean - origin_sd * sd.max(MIN_RATING_SD),
         }
     }
 
@@ -573,27 +586,10 @@ fn term_keys(genres: &[String], tags: &[String]) -> Vec<String> {
 
 /// Ranks a backlog by [`TasteVector`] affinity, for offline evaluation. The
 /// default is the configuration the candidate pools use.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AffinityRanker {
     pub params: TasteParams,
-    /// Weigh terms by their specificity within the caller's own library (the
-    /// offline stand-in for the dump's term counts).
-    pub library_specificity: bool,
-    /// Dump term counts and corpus size, applied after (and so overriding,
-    /// where the dump knows the term) library specificity.
-    pub dump_specificity: Option<(HashMap<String, i64>, u64)>,
     pub label: Option<String>,
-}
-
-impl Default for AffinityRanker {
-    fn default() -> Self {
-        Self {
-            params: TasteParams::default(),
-            library_specificity: true,
-            dump_specificity: None,
-            label: None,
-        }
-    }
 }
 
 impl crate::eval::Ranker for AffinityRanker {
@@ -603,11 +599,8 @@ impl crate::eval::Ranker for AffinityRanker {
 
     fn rank(&self, snapshot: &LibrarySnapshot, backlog: &[&SnapshotSeries]) -> Vec<usize> {
         let mut taste = TasteVector::from_library_with(snapshot, &[], &self.params);
-        if self.library_specificity {
+        if self.params.library_specificity {
             taste.apply_library_specificity(snapshot);
-        }
-        if let Some((counts, corpus)) = &self.dump_specificity {
-            taste.apply_specificity(counts, *corpus);
         }
         let scores: Vec<f64> = backlog
             .iter()
@@ -920,82 +913,5 @@ mod tests {
             "affinity {affinity:?} vs baseline {baseline:?}"
         );
         assert!(affinity.recall_at_10 > baseline.recall_at_10);
-    }
-}
-
-/// Parameter sweep over a saved library, run on demand:
-/// `SHISHO_EVAL_FIXTURE=library.json cargo test -p shisho-services --lib
-/// affinity::tuning -- --ignored --nocapture`.
-#[cfg(test)]
-mod tuning {
-    use super::*;
-    use crate::eval::evaluate;
-
-    #[test]
-    #[ignore = "needs SHISHO_EVAL_FIXTURE"]
-    fn sweep() {
-        let path = std::env::var("SHISHO_EVAL_FIXTURE").expect("SHISHO_EVAL_FIXTURE");
-        let series: Vec<SnapshotSeries> =
-            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let library = LibrarySnapshot::from_series(series);
-        let base = TasteParams::default();
-        let dump: Option<(HashMap<String, i64>, u64)> =
-            std::env::var("SHISHO_EVAL_DUMP_DF").ok().map(|path| {
-                let rows: Vec<serde_json::Value> =
-                    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-                let counts = rows
-                    .iter()
-                    .map(|r| {
-                        (
-                            r["term"].as_str().unwrap().to_owned(),
-                            r["n"].as_i64().unwrap(),
-                        )
-                    })
-                    .collect();
-                (counts, 321_404)
-            });
-        let mut runs: Vec<(String, AffinityRanker)> = vec![
-            (
-                "no-idf".into(),
-                AffinityRanker {
-                    params: base.clone(),
-                    library_specificity: false,
-                    ..Default::default()
-                },
-            ),
-            ("default".into(), AffinityRanker::default()),
-        ];
-        if let Some(dump) = dump {
-            runs.push((
-                "dump-idf".into(),
-                AffinityRanker {
-                    params: base.clone(),
-                    library_specificity: false,
-                    dump_specificity: Some(dump.clone()),
-                    ..Default::default()
-                },
-            ));
-            runs.push((
-                "library+dump-idf".into(),
-                AffinityRanker {
-                    params: base.clone(),
-                    library_specificity: true,
-                    dump_specificity: Some(dump),
-                    ..Default::default()
-                },
-            ));
-        }
-        println!(
-            "{:<22} {:>9} {:>9} {:>7} {:>9}",
-            "run", "recall@10", "recall@40", "MRR", "rankfrac"
-        );
-        for (label, mut ranker) in runs {
-            ranker.label = Some(label.clone());
-            let r = evaluate(&library, &ranker).unwrap();
-            println!(
-                "{:<22} {:>9.3} {:>9.3} {:>7.3} {:>9.3}",
-                label, r.recall_at_10, r.recall_at_40, r.mrr, r.mean_rank_fraction
-            );
-        }
     }
 }

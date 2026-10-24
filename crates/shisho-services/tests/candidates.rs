@@ -1511,3 +1511,94 @@ async fn a_candidate_never_cites_itself_as_a_reason() {
     let cited: Vec<&str> = candidate.because.iter().map(|a| a.title.as_str()).collect();
     assert_eq!(cited, vec!["Other Fantasy"]);
 }
+
+#[tokio::test]
+async fn the_library_pool_ranks_with_the_users_own_tuned_parameters() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    let mut rows = Vec::new();
+    let mut ratings = Vec::new();
+    let mut add = |id: String, genre: &str, read: bool, rating: Option<i32>| {
+        rows.push(codex_row(
+            &id,
+            &format!("{genre} {id}"),
+            &[genre],
+            5,
+            if read { 0 } else { 5 },
+        ));
+        if let Some(r) = rating {
+            ratings.push(serde_json::json!({ "id": format!("r{id}"), "seriesId": id, "rating": r, "notes": null }));
+        }
+    };
+    for i in 0..2 {
+        add(format!("l{i}"), "Loved", true, Some(90));
+    }
+    for i in 0..6 {
+        add(format!("m{i}"), "Meh", true, Some(50));
+    }
+    for i in 0..2 {
+        add(format!("h{i}"), "Hated", true, Some(10));
+    }
+    add("lu".into(), "Loved", false, None);
+    add("mu".into(), "Meh", false, None);
+    let total = rows.len();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": total, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": ratings })),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(&tsundoku)
+        .await;
+
+    let top = |db: DatabaseConnection| {
+        let (codex, tsundoku) = (&codex, &tsundoku);
+        async move {
+            get_candidates(
+                &services(codex, tsundoku, db),
+                &user(),
+                Pool::Library,
+                &Filters::default(),
+            )
+            .await
+            .expect("library pool")
+            .candidates[0]
+                .title
+                .clone()
+        }
+    };
+
+    // Defaults: one sd below this rater's mean, "Meh" reads as liked.
+    assert_eq!(top(fresh_db().await).await, "Meh mu");
+
+    let db = fresh_db().await;
+    let params = shisho_services::affinity::TasteParams {
+        origin_sd: 0.0,
+        ..Default::default()
+    };
+    shisho_services::tuning::store(
+        &db,
+        "user-1",
+        &shisho_services::tuning::Tuning {
+            params,
+            tuned: true,
+            favourites: 2,
+            baseline: None,
+            best: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(top(db).await, "Loved lu");
+}

@@ -849,11 +849,14 @@ async fn taste_for(
     snapshot: &library_snapshot::LibrarySnapshot,
 ) -> TasteVector {
     let outcomes = outcome_signals(services, user_sub, snapshot).await;
-    let mut taste = TasteVector::from_library(snapshot, &outcomes);
+    let params = crate::tuning::params_for(&services.db, user_sub).await;
+    let mut taste = TasteVector::from_library_with(snapshot, &outcomes, &params);
     if taste.is_empty() {
         return taste;
     }
-    taste.apply_library_specificity(snapshot);
+    if params.library_specificity {
+        taste.apply_library_specificity(snapshot);
+    }
     taste
 }
 

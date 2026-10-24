@@ -17,6 +17,7 @@ pub mod read_state;
 pub mod reconciliation;
 pub mod sweeps;
 pub mod tsundoku_cache;
+pub mod tuning;
 pub mod verdict_views;
 pub mod verdicts;
 
@@ -105,6 +106,16 @@ impl Services {
                         Err(err) => {
                             tracing::warn!(user_sub, error = %err, "lazy reconciliation failed");
                         }
+                    }
+                    match tuning::retune_if_stale(&db, &user_sub, snapshot).await {
+                        Ok(Some(t)) => tracing::info!(
+                            user_sub,
+                            tuned = t.tuned,
+                            favourites = t.favourites,
+                            "ranking parameters retuned"
+                        ),
+                        Ok(None) => {}
+                        Err(err) => tracing::warn!(user_sub, error = %err, "tuning failed"),
                     }
                 });
             },

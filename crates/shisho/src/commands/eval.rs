@@ -3,8 +3,8 @@
 //! is judged by a number rather than by feel.
 //!
 //! Live mode reads the user's library from Codex with their stored minted key,
-//! read-only. `--save-fixture` writes that library to JSON, and `--fixture`
-//! replays a saved one offline.
+//! read-only. `--save-fixture` writes that library to JSON, de-identified
+//! (see `eval::deidentify`), and `--fixture` replays a saved one offline.
 
 use std::path::{Path, PathBuf};
 
@@ -27,7 +27,7 @@ pub async fn run(
         (None, None) => bail!("pass --user <id|email|codex-sub> or --fixture <path>"),
     };
     if let Some(path) = save_fixture {
-        let json = serde_json::to_string_pretty(&snapshot.series)?;
+        let json = serde_json::to_string_pretty(&eval::deidentify(&snapshot))?;
         std::fs::write(&path, json).with_context(|| format!("writing {}", path.display()))?;
         println!("library saved to {}", path.display());
     }

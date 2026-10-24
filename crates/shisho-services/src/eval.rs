@@ -183,6 +183,50 @@ pub fn evaluate_outcomes(
     })
 }
 
+/// The library as an eval fixture: only what rankers read. Titles,
+/// summaries, rating notes, library names, Codex ids, external ids, status
+/// and year are dropped; each author becomes a token salted per export, so
+/// shared authors still match within the file but names cannot be recovered
+/// by hashing a list of known authors.
+pub fn deidentify(snapshot: &LibrarySnapshot) -> Vec<SnapshotSeries> {
+    use rand::Rng;
+    use sha2::{Digest, Sha256};
+
+    let mut salt = [0u8; 16];
+    rand::rng().fill_bytes(&mut salt);
+    let token = |author: &str| {
+        let digest = Sha256::new()
+            .chain_update(salt)
+            .chain_update(author.as_bytes())
+            .finalize();
+        format!("author-{}", &hex::encode(digest)[..12])
+    };
+    snapshot
+        .series
+        .iter()
+        .enumerate()
+        .map(|(i, s)| SnapshotSeries {
+            id: format!("s{i}"),
+            library_id: "lib".into(),
+            library_name: "Library".into(),
+            title: format!("series {i}"),
+            summary: None,
+            status: None,
+            year: None,
+            genres: s.genres.clone(),
+            tags: s.tags.clone(),
+            authors: s.authors.iter().map(|a| token(a)).collect(),
+            book_count: s.book_count,
+            unread_count: s.unread_count,
+            read_state: s.read_state,
+            external_ids: Vec::new(),
+            rating: s.rating,
+            rating_notes: None,
+            rating_updated_at: None,
+        })
+        .collect()
+}
+
 /// The library with `held` hidden: unrated, notes dropped, and untouched.
 fn mask(snapshot: &LibrarySnapshot, held: &str) -> LibrarySnapshot {
     let series = snapshot
@@ -343,5 +387,90 @@ mod tests {
     fn eval_without_ratings_has_nothing_to_replay() {
         let lib = LibrarySnapshot::from_series(vec![series("a", ReadState::Untouched, None)]);
         assert!(evaluate(&lib, &SnapshotOrder).is_none());
+    }
+
+    /// A small library carrying everything a real export would.
+    fn identifiable_library() -> LibrarySnapshot {
+        let genres = ["Fantasy", "Romance", "Horror", "Comedy"];
+        let series = (0..24)
+            .map(|i| {
+                let state = match i % 3 {
+                    0 => ReadState::Completed,
+                    1 => ReadState::InProgress,
+                    _ => ReadState::Untouched,
+                };
+                let rating = (state == ReadState::Completed).then_some(60 + i * 2);
+                SnapshotSeries {
+                    library_name: "Private Shelf".into(),
+                    title: format!("Secret Title {i}"),
+                    summary: Some(format!("Plot of secret title {i}")),
+                    status: Some("ongoing".into()),
+                    year: Some(2000 + i),
+                    genres: vec![genres[(i % 4) as usize].into()],
+                    tags: vec![format!("tag-{}", i % 5)],
+                    authors: vec![format!("Author Name {}", i % 6)],
+                    external_ids: vec![
+                        shisho_ids::ExternalId::from_tsundoku(&format!("mal:{}", 1000 + i))
+                            .unwrap(),
+                    ],
+                    rating_notes: rating.map(|_| format!("my private note {i}")),
+                    ..series(&format!("uuid-secret-{i}"), state, rating)
+                }
+            })
+            .collect();
+        LibrarySnapshot::from_series(series)
+    }
+
+    #[test]
+    fn deidentified_fixtures_keep_only_what_rankers_read() {
+        let raw = identifiable_library();
+        let clean = deidentify(&raw);
+        let json = serde_json::to_string(&clean).unwrap();
+        for leak in [
+            "Secret Title",
+            "secret title",
+            "private note",
+            "Private Shelf",
+            "uuid-secret",
+            "mal:",
+            "Author Name",
+            "ongoing",
+        ] {
+            assert!(!json.contains(leak), "{leak} leaked: {json}");
+        }
+
+        // Authors still match within the file, and only within it.
+        assert_eq!(
+            clean[0].authors, clean[6].authors,
+            "same author, same token"
+        );
+        assert_ne!(clean[0].authors, clean[1].authors);
+        assert_ne!(
+            deidentify(&raw)[0].authors,
+            clean[0].authors,
+            "salted per export"
+        );
+
+        // The rankers see the same library.
+        let ranker = crate::affinity::AffinityRanker::default();
+        let clean = LibrarySnapshot::from_series(clean);
+        assert!(
+            evaluate(&raw, &ranker).is_some(),
+            "the library has favourites"
+        );
+        assert_eq!(
+            evaluate(&raw, &ranker).map(|r| (
+                r.recall_at_10,
+                r.recall_at_40,
+                r.mrr,
+                r.mean_rank_fraction
+            )),
+            evaluate(&clean, &ranker).map(|r| (
+                r.recall_at_10,
+                r.recall_at_40,
+                r.mrr,
+                r.mean_rank_fraction
+            ))
+        );
     }
 }

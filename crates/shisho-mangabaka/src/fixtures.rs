@@ -11,6 +11,8 @@
 //!   Tsundoku has never heard of)
 //! - `333` Verdicted By MangaBaka Id (the Codex `lib-f` series, which has
 //!   no summary — exercises description backfill from the dump)
+//! - `112093` Frieren Sequel (prequel 112092), for franchise links and
+//!   structured tags
 //! - `77701` Explicit Pick (pornographic) and `77702` Erotica Pick
 //!   (erotica), for the default content gate
 
@@ -62,7 +64,10 @@ pub async fn write_dump_fixture(dump_dir: &Path) -> anyhow::Result<()> {
             source_anime_planet_id TEXT,
             source_anime_news_network_id INTEGER,
             content_rating TEXT,
-            authors TEXT
+            authors TEXT,
+            tags_v2 TEXT,
+            relationships_sequel TEXT,
+            relationships_prequel TEXT
         )",
         "INSERT INTO series (
             id, title, native_title, titles, type, status, year, final_volume,
@@ -96,6 +101,21 @@ pub async fn write_dump_fixture(dump_dir: &Path) -> anyhow::Result<()> {
         ) VALUES (
             333, 'Verdicted By MangaBaka Id', 'manga', 'releasing', 2019, 70.0,
             'Dump description for the 333 row.', 'active', '[\"Action\"]', '[]'
+        )",
+        // Structured tags (one spoiler) and franchise links: 112093 is the
+        // sequel of Frieren.
+        "UPDATE series SET
+            tags_v2 = '[{\"name\": \"Elves\", \"is_spoiler\": false},
+                        {\"name\": \"Hero Dies\", \"is_spoiler\": true}]',
+            relationships_sequel = '[112093]'
+         WHERE id = 112092",
+        "INSERT INTO series (
+            id, title, type, status, year, rating, description, state, genres, tags,
+            content_rating, tags_v2, relationships_prequel
+        ) VALUES (
+            112093, 'Frieren Sequel', 'manga', 'releasing', 2025, 80.0,
+            'The journey continues.', 'active', '[\"Fantasy\"]', '[]', 'safe',
+            '[{\"name\": \"Elves\", \"is_spoiler\": false}]', '[112092]'
         )",
         // Explicitness fixtures for the content gate: one pornographic and one
         // erotica series, both unowned acquirable picks.

@@ -13,7 +13,7 @@
 
 pub mod client;
 pub mod error;
-#[cfg(feature = "test-fixtures")]
+#[cfg(any(test, feature = "test-fixtures"))]
 pub mod fixtures;
 pub mod mapping;
 mod metrics;

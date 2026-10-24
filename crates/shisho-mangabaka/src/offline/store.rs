@@ -9,11 +9,13 @@
 //! extraction (one per source column); `search_fts` relies on the
 //! `series_title_fts` virtual table the same step builds.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow};
 use sea_orm::{
-    ConnectOptions, ConnectionTrait, Database, DatabaseConnection, FromQueryResult, Statement,
+    ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbBackend, FromQueryResult,
+    Statement,
 };
 use serde_json::Value as Json;
 use shisho_ids::{ExternalId, Provider};
@@ -79,6 +81,89 @@ impl OfflineStore {
     /// Lookup by MangaBaka series id. Returns `Ok(None)` if no row matches
     /// or the row is marked merged/deleted (both are "not found" — merged
     /// rows live behind their canonical row).
+    /// Genres and non-spoiler tags per series, from the `series_terms` side
+    /// table (empty when the dump predates it).
+    pub async fn terms_for(&self, ids: &[i64]) -> anyhow::Result<HashMap<i64, Vec<SeriesTerm>>> {
+        let mut out: HashMap<i64, Vec<SeriesTerm>> = HashMap::new();
+        if ids.is_empty() || !self.has_table("series_terms").await? {
+            return Ok(out);
+        }
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                format!(
+                    "SELECT series_id, term, kind FROM series_terms \
+                     WHERE series_id IN ({placeholders}) ORDER BY rowid"
+                ),
+                ids.iter().map(|&id| id.into()),
+            ))
+            .await?;
+        for row in rows {
+            let series_id: i64 = row.try_get("", "series_id")?;
+            out.entry(series_id).or_default().push(SeriesTerm {
+                term: row.try_get("", "term")?,
+                kind: row.try_get("", "kind")?,
+            });
+        }
+        Ok(out)
+    }
+
+    /// How many active series carry `term` (case-insensitive), across kinds;
+    /// `None` when no series does or the dump predates the side tables.
+    pub async fn term_series_count(&self, term: &str) -> anyhow::Result<Option<i64>> {
+        if !self.has_table("term_stats").await? {
+            return Ok(None);
+        }
+        let row = self
+            .db
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "SELECT SUM(series_count) AS n FROM term_stats WHERE term = ?1 COLLATE NOCASE",
+                [term.into()],
+            ))
+            .await?;
+        Ok(row.and_then(|r| r.try_get::<Option<i64>>("", "n").ok().flatten()))
+    }
+
+    /// Active series in the dump: the corpus size for term specificity.
+    pub async fn active_series_count(&self) -> anyhow::Result<u64> {
+        self.count_active_rows().await
+    }
+
+    /// Franchise links of one series as `(kind, related_id)`, where `kind` is
+    /// what the related series is to it (`sequel`, `prequel`, `side_story`,
+    /// `spin_off`, `main_story`).
+    pub async fn relations_for(&self, id: i64) -> anyhow::Result<Vec<(String, i64)>> {
+        if !self.has_table("series_relations").await? {
+            return Ok(Vec::new());
+        }
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "SELECT kind, related_id FROM series_relations WHERE series_id = ?1",
+                [id.into()],
+            ))
+            .await?;
+        rows.iter()
+            .map(|row| Ok((row.try_get("", "kind")?, row.try_get("", "related_id")?)))
+            .collect()
+    }
+
+    async fn has_table(&self, name: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .db
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?1",
+                [name.into()],
+            ))
+            .await?
+            .is_some())
+    }
+
     pub async fn find_by_id(&self, id: &str) -> anyhow::Result<Option<SeriesMetadata>> {
         let Ok(parsed) = id.parse::<i64>() else {
             return Ok(None);
@@ -180,6 +265,14 @@ impl OfflineStore {
             .map(|(hit, _)| hit)
             .collect())
     }
+}
+
+/// One genre or tag of a dump series.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeriesTerm {
+    pub term: String,
+    /// `genre` or `tag`.
+    pub kind: String,
 }
 
 // Single source of truth for the column list every dump SELECT pulls into

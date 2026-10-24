@@ -30,6 +30,115 @@ const INDEXES: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_series_state ON series(state)",
 ];
 
+/// The relationship columns read into `series_relations`, by kind.
+const RELATION_KINDS: &[&str] = &["sequel", "prequel", "side_story", "spin_off", "main_story"];
+
+async fn table_exists(db: &sea_orm::DatabaseConnection, name: &str) -> Result<bool> {
+    let check = Statement::from_sql_and_values(
+        db.get_database_backend(),
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?1",
+        [name.into()],
+    );
+    Ok(db.query_one_raw(check).await?.is_some())
+}
+
+async fn series_columns(db: &sea_orm::DatabaseConnection) -> Result<Vec<String>> {
+    let rows = db
+        .query_all_raw(Statement::from_string(
+            db.get_database_backend(),
+            "SELECT name FROM pragma_table_info('series')".to_string(),
+        ))
+        .await?;
+    rows.iter()
+        .map(|row| row.try_get::<String>("", "name").map_err(Into::into))
+        .collect()
+}
+
+/// Indexed side tables over the dump's JSON columns, for taste-based
+/// discovery and franchise logic: `series_terms` (genres and non-spoiler
+/// structured tags of active series), `term_stats` (how many series carry
+/// each term, for specificity weighting), and `series_relations` (sequel,
+/// prequel, side story, spin-off, main story links). Columns an older dump
+/// lacks are skipped, leaving the tables empty rather than failing.
+async fn build_side_tables(db: &sea_orm::DatabaseConnection) -> Result<()> {
+    if table_exists(db, "series_terms").await? {
+        return Ok(());
+    }
+    let backend = db.get_database_backend();
+    let columns = series_columns(db).await?;
+    let has = |c: &str| columns.iter().any(|x| x == c);
+    let active = "(s.state = 'active' OR s.state IS NULL)";
+
+    let mut statements: Vec<String> = vec![
+        "CREATE TABLE series_terms (
+            series_id INTEGER NOT NULL,
+            term TEXT NOT NULL COLLATE NOCASE,
+            kind TEXT NOT NULL
+        )"
+        .into(),
+    ];
+    if has("genres") {
+        statements.push(format!(
+            "INSERT INTO series_terms (series_id, term, kind)
+             SELECT s.id, j.value, 'genre' FROM series s, json_each(s.genres) j
+             WHERE {active} AND json_valid(s.genres) AND j.type = 'text'"
+        ));
+    }
+    if has("tags_v2") {
+        statements.push(format!(
+            "INSERT INTO series_terms (series_id, term, kind)
+             SELECT s.id, json_extract(j.value, '$.name'), 'tag'
+             FROM series s, json_each(s.tags_v2) j
+             WHERE {active} AND json_valid(s.tags_v2)
+               AND json_extract(j.value, '$.name') IS NOT NULL
+               AND COALESCE(json_extract(j.value, '$.is_spoiler'), 0) = 0"
+        ));
+    } else if has("tags") {
+        statements.push(format!(
+            "INSERT INTO series_terms (series_id, term, kind)
+             SELECT s.id, j.value, 'tag' FROM series s, json_each(s.tags) j
+             WHERE {active} AND json_valid(s.tags) AND j.type = 'text'"
+        ));
+    }
+    statements.extend([
+        "CREATE INDEX idx_series_terms_term ON series_terms(term)".into(),
+        "CREATE INDEX idx_series_terms_series ON series_terms(series_id)".into(),
+        "CREATE TABLE term_stats AS
+             SELECT term, kind, COUNT(DISTINCT series_id) AS series_count
+             FROM series_terms GROUP BY term, kind"
+            .into(),
+        "CREATE INDEX idx_term_stats_term ON term_stats(term COLLATE NOCASE)".into(),
+        "CREATE TABLE series_relations (
+            series_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            related_id INTEGER NOT NULL
+        )"
+        .into(),
+    ]);
+    for kind in RELATION_KINDS {
+        let column = format!("relationships_{kind}");
+        if has(&column) {
+            statements.push(format!(
+                "INSERT INTO series_relations (series_id, kind, related_id)
+                 SELECT s.id, '{kind}', j.value FROM series s, json_each(s.{column}) j
+                 WHERE {active} AND json_valid(s.{column}) AND j.type = 'integer'"
+            ));
+        }
+    }
+    statements.extend([
+        "CREATE INDEX idx_series_relations_series ON series_relations(series_id)".into(),
+        "CREATE INDEX idx_series_relations_related ON series_relations(related_id)".into(),
+    ]);
+
+    tracing::info!("building dump side tables (terms, term stats, relations)");
+    for stmt in statements {
+        db.execute_raw(Statement::from_string(backend, stmt.clone()))
+            .await
+            .with_context(|| format!("building side tables via {stmt}"))?;
+    }
+    Ok(())
+}
+
 /// Build indexes + FTS5 mirror on the extracted dump. Idempotent: a dump
 /// that already went through `prepare` once is detected via the FTS5 table
 /// presence and skipped.
@@ -47,12 +156,12 @@ pub async fn prepare(dump_path: impl AsRef<Path>) -> Result<()> {
 
     let backend = db.get_database_backend();
 
+    // The side tables are their own idempotent stage, so a dump prepared
+    // before they existed gains them on its next preparation.
+    build_side_tables(&db).await?;
+
     // Skip re-running if FTS already exists.
-    let fts_check = Statement::from_string(
-        backend,
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='series_title_fts'".to_string(),
-    );
-    if db.query_one_raw(fts_check).await?.is_some() {
+    if table_exists(&db, "series_title_fts").await? {
         tracing::debug!("dump already prepared; skipping setup");
         return Ok(());
     }
@@ -117,6 +226,48 @@ pub async fn prepare(dump_path: impl AsRef<Path>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn fixture_store() -> (TempDir, crate::offline::OfflineStore) {
+        let dir = TempDir::new().unwrap();
+        crate::fixtures::write_dump_fixture(dir.path())
+            .await
+            .unwrap();
+        let store = crate::offline::OfflineStore::open_ro(crate::offline::dump_path(dir.path()))
+            .await
+            .unwrap();
+        (dir, store)
+    }
+
+    #[tokio::test]
+    async fn side_tables_hold_genres_and_non_spoiler_tags() {
+        let (_dir, store) = fixture_store().await;
+        let terms = store.terms_for(&[112092]).await.unwrap();
+        let frieren: Vec<&str> = terms[&112092].iter().map(|t| t.term.as_str()).collect();
+        assert!(frieren.contains(&"Fantasy"), "{frieren:?}");
+        assert!(frieren.contains(&"Elves"), "{frieren:?}");
+        assert!(
+            !frieren.contains(&"Hero Dies"),
+            "spoiler tags stay out: {frieren:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn side_tables_count_series_per_term() {
+        let (_dir, store) = fixture_store().await;
+        // Frieren and its sequel both carry Elves.
+        assert_eq!(store.term_series_count("elves").await.unwrap(), Some(2));
+        assert_eq!(store.term_series_count("No Such Term").await.unwrap(), None);
+        assert!(store.active_series_count().await.unwrap() >= 7);
+    }
+
+    #[tokio::test]
+    async fn side_tables_link_franchise_entries_both_ways() {
+        let (_dir, store) = fixture_store().await;
+        let links = store.relations_for(112092).await.unwrap();
+        assert!(links.contains(&("sequel".to_owned(), 112093)), "{links:?}");
+        let back = store.relations_for(112093).await.unwrap();
+        assert!(back.contains(&("prequel".to_owned(), 112092)), "{back:?}");
+    }
     use sea_orm::{ConnectionTrait, Database, Statement};
     use tempfile::TempDir;
 

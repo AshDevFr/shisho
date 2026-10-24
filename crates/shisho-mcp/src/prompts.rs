@@ -97,7 +97,7 @@ pub struct RecommendContext {
     /// session directive when set.
     pub pool: Option<String>,
     /// Target number of final recommendations, appended when set.
-    pub count: Option<String>,
+    pub count: Option<u32>,
 }
 
 /// Empty context for the parameter-less `consolidate` prompt.
@@ -121,17 +121,46 @@ pub fn consolidate() -> Result<String, PromptError> {
 #[derive(Debug, Serialize)]
 pub struct WeeklyReportContext {
     pub session_id: String,
+    /// The one pool this run covers (see [`weekly_pool`]).
+    pub pool: String,
+}
+
+/// The weekly report covers one pool per run, alternating by ISO week (even:
+/// the library backlog, odd: acquirable), so each run can verify its
+/// finalists properly within the headless runner's turn budget.
+pub fn weekly_pool(date: chrono::NaiveDate) -> &'static str {
+    use chrono::Datelike;
+    if date.iso_week().week().is_multiple_of(2) {
+        "library"
+    } else {
+        "acquirable"
+    }
+}
+
+/// Parse the `count` prompt argument. MCP prompt arguments are strings on the
+/// wire, so the number is validated here rather than typed in the schema.
+pub fn parse_count(raw: Option<String>) -> Result<Option<u32>, String> {
+    match raw.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(text) => match text.parse::<u32>() {
+            Ok(n) if n > 0 => Ok(Some(n)),
+            _ => Err(format!(
+                "count must be a positive whole number, got {text:?}"
+            )),
+        },
+    }
 }
 
 /// Render the unattended weekly-report prompt. Not an MCP prompt — the headless
 /// `claude -p` runner renders it (via the `shisho report prompt` CLI) and pipes
 /// it in, so the prompt stays data (a `.md.j2`), never an inline string in the
 /// runner or in Rust.
-pub fn weekly_report(session_id: &str) -> Result<String, PromptError> {
+pub fn weekly_report(session_id: &str, pool: &str) -> Result<String, PromptError> {
     render(
         WEEKLY_REPORT,
         WeeklyReportContext {
             session_id: session_id.to_owned(),
+            pool: pool.to_owned(),
         },
     )
 }
@@ -144,7 +173,7 @@ pub struct RecommendArgs {
     /// Pool to start from: "library" (default) or "acquirable".
     #[serde(default)]
     pub pool: Option<String>,
-    /// How many final recommendations to aim for.
+    /// How many final recommendations to aim for (a positive whole number).
     #[serde(default)]
     pub count: Option<String>,
 }
@@ -156,15 +185,16 @@ pub struct RecommendArgs {
 impl McpService {
     #[prompt(
         name = "recommend",
-        description = "Run a full recommendation session: candidates, per-candidate verification against the taste profile, tiered output, and a verdict logged for everything surfaced."
+        description = "Run a recommendation session: one pool of pre-ranked candidates, verification of the finalists against the taste profile, tiered output, and a verdict logged for everything surfaced."
     )]
     async fn recommend_prompt(
         &self,
         Parameters(args): Parameters<RecommendArgs>,
     ) -> Result<Vec<PromptMessage>, ErrorData> {
+        let count = parse_count(args.count).map_err(|msg| ErrorData::invalid_params(msg, None))?;
         let text = recommend(&RecommendContext {
             pool: args.pool,
-            count: args.count,
+            count,
         })
         .map_err(render_error)?;
         Ok(vec![PromptMessage::new_text(Role::User, text)])
@@ -207,7 +237,7 @@ mod tests {
     fn recommend_appends_session_parameters_when_set() {
         let out = recommend(&RecommendContext {
             pool: Some("acquirable".into()),
-            count: Some("5".into()),
+            count: Some(5),
         })
         .expect("render");
         assert!(out.contains("## Session parameters"));
@@ -236,8 +266,35 @@ mod tests {
     }
 
     #[test]
+    fn prompts_weekly_pool_alternates_by_iso_week() {
+        // 2026-10-12 is ISO week 42, 2026-10-19 is week 43.
+        let week42 = chrono::NaiveDate::from_ymd_opt(2026, 10, 12).unwrap();
+        let week43 = chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        assert_eq!(weekly_pool(week42), "library");
+        assert_eq!(weekly_pool(week43), "acquirable");
+        let out = weekly_report("weekly-2026-10-19", weekly_pool(week43)).expect("render");
+        assert!(out.contains("This week's pool: `acquirable`"), "{out}");
+    }
+
+    #[test]
+    fn prompts_recommend_verifies_finalists_not_every_candidate() {
+        let out = recommend(&RecommendContext::default()).expect("render");
+        assert!(!out.to_lowercase().contains("verify every candidate"));
+        assert!(out.contains("because"));
+        assert!(out.contains("finalists"));
+    }
+
+    #[test]
+    fn prompts_count_must_be_a_positive_integer() {
+        assert_eq!(parse_count(Some("5".into())).unwrap(), Some(5));
+        assert_eq!(parse_count(None).unwrap(), None);
+        assert!(parse_count(Some("five".into())).is_err());
+        assert!(parse_count(Some("0".into())).is_err());
+    }
+
+    #[test]
     fn weekly_report_renders_with_the_session_id_injected() {
-        let out = weekly_report("weekly-2026-06-15").expect("render");
+        let out = weekly_report("weekly-2026-06-15", "library").expect("render");
         assert!(out.contains("# Shisho weekly recommendation report"));
         assert!(out.contains("## Report format"));
         // The session id is interpolated everywhere the template references it.

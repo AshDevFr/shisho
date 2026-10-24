@@ -6,12 +6,13 @@
 use anyhow::Context;
 
 /// Render the weekly-report prompt with the given session id (defaults to
-/// `weekly-<today>` when none is passed) and print it. This command does not
+/// `weekly-<today>` when none is passed) and this week's pool, and print it. This command does not
 /// touch the database or the network — it only renders the template.
 pub fn prompt(session_id: Option<String>) -> anyhow::Result<()> {
-    let session_id =
-        session_id.unwrap_or_else(|| format!("weekly-{}", chrono::Utc::now().format("%Y-%m-%d")));
-    let rendered = shisho_mcp::prompts::weekly_report(&session_id)
+    let today = chrono::Utc::now().date_naive();
+    let session_id = session_id.unwrap_or_else(|| format!("weekly-{}", today.format("%Y-%m-%d")));
+    let pool = shisho_mcp::prompts::weekly_pool(today);
+    let rendered = shisho_mcp::prompts::weekly_report(&session_id, pool)
         .context("rendering the weekly-report prompt")?;
     print!("{rendered}");
     Ok(())

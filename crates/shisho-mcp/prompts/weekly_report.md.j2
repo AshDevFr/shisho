@@ -6,45 +6,45 @@ reasonable choices yourself, note every assumption in the report, and never
 wait for input.
 
 Your final message is the deliverable. It must be ONLY the report Markdown
-described below — no preamble, no commentary about the run itself.
+described below: no preamble, no commentary about the run itself.
+
+This week's pool: `{{ pool }}`. The report alternates pools week to week
+(the library backlog one week, series worth acquiring the next), so cover
+only this one and do it well.
 
 ## Workflow
 
-1. **Ground yourself.** Call `status()` first. If a pool is degraded or the
-   data is stale, say so in the report's status notes and qualify everything
-   accordingly.
+1. **Ground yourself.** Call `status()` first. If this week's pool is
+   unavailable, say so in the status notes and fall back to the other pool.
 2. **Read the profile and the open questions.** Call `get_profile` with
    `includeRecentFeedback: true`. List every `pendingReconciliation` entry
    in the report as an open question ("you started X after it was
-   recommended — how was it?"). Do NOT record outcomes on the user's
+   recommended; how was it?"). Do NOT record outcomes on the user's
    behalf; the questions are for the user to answer.
 3. **Run the recommendation loop** (same discipline as the interactive
-   `recommend` prompt):
-   - cover both pools — `library` (owned, unread) and `acquirable` (worth
-     buying) — unless `status()` reports one unavailable;
-   - verify every candidate against the profile's hard allergens and soft
-     red flags before recommending it (`lookup`, and web research for
-     candidates with thin metadata);
+   `recommend` prompt) for 5 recommendations:
+   - `get_candidates` with `pool: "{{ pool }}"` returns candidates ranked by
+     affinity to the user's ratings; `because` names the evidence;
+   - verify the top ~10 finalists against the profile's hard allergens and
+     soft red flags (`lookup`; web research only for `enrichment: "none"`);
    - a failed or impossible verification is a retraction
      (`record_verdict` with `retracted: true`,
      `retractionReason: "failedVerification"`), never a caveat;
-   - record a verdict for EVERY candidate you surfaced — recommendations,
-     passes, retractions.
+   - at most two picks sharing a primary genre; for a franchise, the
+     earliest unread entry;
+   - record a verdict for every finalist: recommendations, passes,
+     retractions.
 4. **Use this session id** for every verdict of this run: `{{ session_id }}`.
 
 ## Report format
 
 ```markdown
-# Shisho weekly report — {{ session_id }}
+# Shisho weekly report: {{ session_id }}
 
-## Recommendations
-
-### From your backlog (library pool)
+## Recommendations ({{ pool }} pool)
 <tiered S/A/B entries; each with a one-paragraph rationale tied to the
-profile and prior ratings. "None this week" with the reason if empty.>
-
-### Worth acquiring
-<same shape; skip the section with a note if the pool is unavailable.>
+profile and citing the `because` evidence (the user's own ratings). "None
+this week" with the reason if empty.>
 
 ## Open reconciliation questions
 <one bullet per pendingReconciliation entry: series, when it was
@@ -52,7 +52,7 @@ recommended, what to do ("reply with record_feedback or use the web
 console"). "None" if empty.>
 
 ## Status notes
-<data freshness, degraded pools, unresolvable-series count — anything the
+<data freshness, degraded pools, unresolvable-series count: anything the
 user should know about the run's quality. Include the session id used for
-this run's verdicts.>
+this run's verdicts and which pool next week's report will cover.>
 ```

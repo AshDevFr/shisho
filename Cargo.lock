@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "migration"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "sea-orm-migration",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "shisho"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4208,7 +4208,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4248,7 +4248,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-auth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4271,7 +4271,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-cache"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dashmap",
@@ -4283,7 +4283,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-codex"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "reqwest 0.13.5",
@@ -4299,7 +4299,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4310,7 +4310,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-crypto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -4327,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-db"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4351,7 +4351,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-ids"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "thiserror 2.0.21",
  "tracing",
@@ -4359,7 +4359,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-mangabaka"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4384,7 +4384,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4417,7 +4417,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-oauth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -4434,7 +4434,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-services"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4468,7 +4468,7 @@ dependencies = [
 
 [[package]]
 name = "shisho-tsundoku"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "reqwest 0.13.5",
  "serde",

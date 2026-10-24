@@ -2,6 +2,19 @@
 
 All notable changes to shisho will be documented in this file.
 
+## [0.1.1] - 2026-10-24
+
+### Features
+
+- *(reconciliation)* Record outcomes from ratings set in Codex
+- *(eval)* Save eval fixtures de-identified
+- *(reconciliation)* Record stalled reads of recommendations as DNF
+- *(tuning)* Choose ranking parameters per user from their own library
+
+### Miscellaneous Tasks
+
+- Credit the project to a public handle
+
 ## [0.1.0] - 2026-10-24
 
 ### Features

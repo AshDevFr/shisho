@@ -4188,6 +4188,7 @@ dependencies = [
  "chrono",
  "clap",
  "rmcp",
+ "serde_json",
  "shisho-api",
  "shisho-auth",
  "shisho-config",

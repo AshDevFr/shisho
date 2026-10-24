@@ -55,6 +55,21 @@ enum Commands {
         #[command(subcommand)]
         command: SweepCommands,
     },
+    /// Measure backlog rankers by replaying a user's top-rated series
+    Eval {
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
+        config: PathBuf,
+        /// The user to evaluate (Shisho user id, email, or Codex user id); reads
+        /// their library live from Codex, read-only
+        #[arg(short, long)]
+        user: Option<String>,
+        /// Replay a saved library instead of reading Codex
+        #[arg(short, long)]
+        fixture: Option<PathBuf>,
+        /// Save the library that was evaluated, for offline replays
+        #[arg(long)]
+        save_fixture: Option<PathBuf>,
+    },
     /// Weekly-report helpers for the headless `claude -p` runner
     Report {
         #[command(subcommand)]
@@ -142,6 +157,12 @@ async fn main() -> anyhow::Result<()> {
             SweepCommands::Reconcile { config } => commands::sweep::reconcile(config).await,
             SweepCommands::Unresolvable { config } => commands::sweep::unresolvable(config).await,
         },
+        Commands::Eval {
+            config,
+            user,
+            fixture,
+            save_fixture,
+        } => commands::eval::run(config, user, fixture, save_fixture).await,
         Commands::Report { command } => match command {
             ReportCommands::Prompt { session } => commands::report::prompt(session),
         },

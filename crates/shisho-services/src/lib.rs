@@ -5,6 +5,7 @@
 
 pub mod candidates;
 pub mod codex_identity;
+pub mod eval;
 pub mod health;
 pub mod library;
 pub mod library_snapshot;

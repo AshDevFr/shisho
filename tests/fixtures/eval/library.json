@@ -1,0 +1,1776 @@
+[
+  {
+    "id": "s048",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 48",
+    "summary": null,
+    "status": "completed",
+    "year": 2016,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Tournament",
+      "Basketball",
+      "Rivalry"
+    ],
+    "bookCount": 6,
+    "unreadCount": 3,
+    "readState": "inProgress",
+    "externalIds": [
+      "mangabaka:10048"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s053",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 53",
+    "summary": null,
+    "status": "completed",
+    "year": 2021,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Basketball",
+      "Tournament",
+      "Rivalry"
+    ],
+    "bookCount": 15,
+    "unreadCount": 15,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10053"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s025",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 25",
+    "summary": null,
+    "status": "completed",
+    "year": 2021,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Cooking",
+      "Iyashikei",
+      "Found Family"
+    ],
+    "bookCount": 16,
+    "unreadCount": 16,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10025"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s006",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 6",
+    "summary": null,
+    "status": "completed",
+    "year": 2016,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Found Family",
+      "Magic"
+    ],
+    "bookCount": 10,
+    "unreadCount": 5,
+    "readState": "inProgress",
+    "externalIds": [
+      "mangabaka:10006"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s027",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 27",
+    "summary": null,
+    "status": "completed",
+    "year": 2023,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Cooking",
+      "Found Family"
+    ],
+    "bookCount": 10,
+    "unreadCount": 10,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10027"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s060",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 60",
+    "summary": null,
+    "status": "completed",
+    "year": 2014,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "Love Triangle",
+      "School Life"
+    ],
+    "bookCount": 7,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10060"
+    ],
+    "rating": 57,
+    "ratingNotes": null
+  },
+  {
+    "id": "s019",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 19",
+    "summary": null,
+    "status": "completed",
+    "year": 2015,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Found Family",
+      "Iyashikei"
+    ],
+    "bookCount": 17,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10019"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s055",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 55",
+    "summary": null,
+    "status": "completed",
+    "year": 2023,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Basketball",
+      "Rivalry"
+    ],
+    "bookCount": 17,
+    "unreadCount": 17,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10055"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s069",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 69",
+    "summary": null,
+    "status": "completed",
+    "year": 2023,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 17,
+    "unreadCount": 17,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10069"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s045",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 45",
+    "summary": null,
+    "status": "completed",
+    "year": 2013,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Basketball",
+      "Tournament"
+    ],
+    "bookCount": 10,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10045"
+    ],
+    "rating": 49,
+    "ratingNotes": null
+  },
+  {
+    "id": "s039",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 39",
+    "summary": null,
+    "status": "completed",
+    "year": 2021,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Survival",
+      "Gore",
+      "Monsters"
+    ],
+    "bookCount": 6,
+    "unreadCount": 6,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10039"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s004",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 4",
+    "summary": null,
+    "status": "completed",
+    "year": 2014,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Elves",
+      "Magic"
+    ],
+    "bookCount": 20,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10004"
+    ],
+    "rating": 93,
+    "ratingNotes": null
+  },
+  {
+    "id": "s031",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 31",
+    "summary": null,
+    "status": "completed",
+    "year": 2013,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Survival",
+      "Monsters",
+      "Gore"
+    ],
+    "bookCount": 18,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10031"
+    ],
+    "rating": 32,
+    "ratingNotes": null
+  },
+  {
+    "id": "s002",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 2",
+    "summary": null,
+    "status": "completed",
+    "year": 2012,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Journey",
+      "Found Family"
+    ],
+    "bookCount": 4,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10002"
+    ],
+    "rating": 82,
+    "ratingNotes": null
+  },
+  {
+    "id": "s044",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 44",
+    "summary": null,
+    "status": "completed",
+    "year": 2012,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Rivalry",
+      "Tournament"
+    ],
+    "bookCount": 10,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10044"
+    ],
+    "rating": 54,
+    "ratingNotes": null
+  },
+  {
+    "id": "s052",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 52",
+    "summary": null,
+    "status": "completed",
+    "year": 2020,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Tournament",
+      "Basketball"
+    ],
+    "bookCount": 16,
+    "unreadCount": 16,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10052"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s023",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 23",
+    "summary": null,
+    "status": "completed",
+    "year": 2019,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Iyashikei",
+      "Found Family"
+    ],
+    "bookCount": 18,
+    "unreadCount": 18,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10023"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s013",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 13",
+    "summary": null,
+    "status": "completed",
+    "year": 2023,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Elves",
+      "Magic",
+      "Journey"
+    ],
+    "bookCount": 5,
+    "unreadCount": 5,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10013"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s034",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 34",
+    "summary": null,
+    "status": "completed",
+    "year": 2016,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Gore",
+      "Monsters"
+    ],
+    "bookCount": 20,
+    "unreadCount": 10,
+    "readState": "inProgress",
+    "externalIds": [
+      "mangabaka:10034"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s063",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 63",
+    "summary": null,
+    "status": "completed",
+    "year": 2017,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "Love Triangle",
+      "School Life"
+    ],
+    "bookCount": 3,
+    "unreadCount": 3,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10063"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s037",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 37",
+    "summary": null,
+    "status": "completed",
+    "year": 2019,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Survival",
+      "Monsters",
+      "Gore"
+    ],
+    "bookCount": 6,
+    "unreadCount": 6,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10037"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s068",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 68",
+    "summary": null,
+    "status": "completed",
+    "year": 2022,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 17,
+    "unreadCount": 17,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10068"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s035",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 35",
+    "summary": null,
+    "status": "completed",
+    "year": 2017,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Survival",
+      "Gore"
+    ],
+    "bookCount": 5,
+    "unreadCount": 5,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10035"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s001",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 1",
+    "summary": null,
+    "status": "completed",
+    "year": 2011,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Found Family",
+      "Journey"
+    ],
+    "bookCount": 4,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10001"
+    ],
+    "rating": 90,
+    "ratingNotes": null
+  },
+  {
+    "id": "s029",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 29",
+    "summary": null,
+    "status": "completed",
+    "year": 2011,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Gore",
+      "Monsters",
+      "Survival"
+    ],
+    "bookCount": 20,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10029"
+    ],
+    "rating": 28,
+    "ratingNotes": null
+  },
+  {
+    "id": "s047",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 47",
+    "summary": null,
+    "status": "completed",
+    "year": 2015,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Tournament",
+      "Basketball",
+      "Rivalry"
+    ],
+    "bookCount": 17,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10047"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s003",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 3",
+    "summary": null,
+    "status": "completed",
+    "year": 2013,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Magic",
+      "Found Family"
+    ],
+    "bookCount": 16,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10003"
+    ],
+    "rating": 96,
+    "ratingNotes": null
+  },
+  {
+    "id": "s036",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 36",
+    "summary": null,
+    "status": "completed",
+    "year": 2018,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Monsters",
+      "Survival"
+    ],
+    "bookCount": 7,
+    "unreadCount": 7,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10036"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s012",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 12",
+    "summary": null,
+    "status": "completed",
+    "year": 2022,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Journey",
+      "Elves",
+      "Found Family"
+    ],
+    "bookCount": 14,
+    "unreadCount": 14,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10012"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s041",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 41",
+    "summary": null,
+    "status": "completed",
+    "year": 2023,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Gore",
+      "Survival"
+    ],
+    "bookCount": 7,
+    "unreadCount": 7,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10041"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s064",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 64",
+    "summary": null,
+    "status": "completed",
+    "year": 2018,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 18,
+    "unreadCount": 18,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10064"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s022",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 22",
+    "summary": null,
+    "status": "completed",
+    "year": 2018,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Cooking",
+      "Iyashikei"
+    ],
+    "bookCount": 7,
+    "unreadCount": 7,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10022"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s040",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 40",
+    "summary": null,
+    "status": "completed",
+    "year": 2022,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Monsters",
+      "Survival",
+      "Gore"
+    ],
+    "bookCount": 8,
+    "unreadCount": 8,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10040"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s033",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 33",
+    "summary": null,
+    "status": "completed",
+    "year": 2015,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Gore",
+      "Monsters",
+      "Survival"
+    ],
+    "bookCount": 4,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10033"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s059",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 59",
+    "summary": null,
+    "status": "completed",
+    "year": 2013,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 19,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10059"
+    ],
+    "rating": 50,
+    "ratingNotes": null
+  },
+  {
+    "id": "s038",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 38",
+    "summary": null,
+    "status": "completed",
+    "year": 2020,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Survival",
+      "Monsters"
+    ],
+    "bookCount": 18,
+    "unreadCount": 18,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10038"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s049",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 49",
+    "summary": null,
+    "status": "completed",
+    "year": 2017,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Tournament",
+      "Basketball"
+    ],
+    "bookCount": 13,
+    "unreadCount": 13,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10049"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s011",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 11",
+    "summary": null,
+    "status": "completed",
+    "year": 2021,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Found Family",
+      "Journey"
+    ],
+    "bookCount": 20,
+    "unreadCount": 20,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10011"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s032",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 32",
+    "summary": null,
+    "status": "completed",
+    "year": 2014,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Gore",
+      "Monsters",
+      "Survival"
+    ],
+    "bookCount": 9,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10032"
+    ],
+    "rating": 40,
+    "ratingNotes": null
+  },
+  {
+    "id": "s070",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 70",
+    "summary": null,
+    "status": "completed",
+    "year": 2010,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 20,
+    "unreadCount": 20,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10070"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s007",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 7",
+    "summary": null,
+    "status": "completed",
+    "year": 2017,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Elves",
+      "Found Family"
+    ],
+    "bookCount": 16,
+    "unreadCount": 16,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10007"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s015",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 15",
+    "summary": null,
+    "status": "completed",
+    "year": 2011,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Found Family",
+      "Iyashikei"
+    ],
+    "bookCount": 8,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10015"
+    ],
+    "rating": 77,
+    "ratingNotes": null
+  },
+  {
+    "id": "s030",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 30",
+    "summary": null,
+    "status": "completed",
+    "year": 2012,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Gore",
+      "Monsters",
+      "Survival"
+    ],
+    "bookCount": 20,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10030"
+    ],
+    "rating": 31,
+    "ratingNotes": null
+  },
+  {
+    "id": "s009",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 9",
+    "summary": null,
+    "status": "completed",
+    "year": 2019,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Magic",
+      "Journey"
+    ],
+    "bookCount": 9,
+    "unreadCount": 9,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10009"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s017",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 17",
+    "summary": null,
+    "status": "completed",
+    "year": 2013,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Iyashikei",
+      "Found Family",
+      "Cooking"
+    ],
+    "bookCount": 17,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10017"
+    ],
+    "rating": 77,
+    "ratingNotes": null
+  },
+  {
+    "id": "s067",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 67",
+    "summary": null,
+    "status": "completed",
+    "year": 2021,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "Love Triangle",
+      "School Life"
+    ],
+    "bookCount": 6,
+    "unreadCount": 6,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10067"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s024",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 24",
+    "summary": null,
+    "status": "completed",
+    "year": 2020,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Cooking",
+      "Iyashikei"
+    ],
+    "bookCount": 15,
+    "unreadCount": 15,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10024"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s056",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 56",
+    "summary": null,
+    "status": "completed",
+    "year": 2010,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Rivalry",
+      "Tournament"
+    ],
+    "bookCount": 14,
+    "unreadCount": 14,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10056"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s042",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Horror Series 42",
+    "summary": null,
+    "status": "completed",
+    "year": 2010,
+    "genres": [
+      "Horror",
+      "Mystery"
+    ],
+    "tags": [
+      "Monsters",
+      "Survival"
+    ],
+    "bookCount": 5,
+    "unreadCount": 5,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10042"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s046",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 46",
+    "summary": null,
+    "status": "completed",
+    "year": 2014,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Tournament",
+      "Basketball",
+      "Rivalry"
+    ],
+    "bookCount": 11,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10046"
+    ],
+    "rating": 36,
+    "ratingNotes": null
+  },
+  {
+    "id": "s010",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 10",
+    "summary": null,
+    "status": "completed",
+    "year": 2020,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Magic",
+      "Journey",
+      "Found Family"
+    ],
+    "bookCount": 4,
+    "unreadCount": 4,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10010"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s050",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 50",
+    "summary": null,
+    "status": "completed",
+    "year": 2018,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Tournament",
+      "Basketball"
+    ],
+    "bookCount": 18,
+    "unreadCount": 18,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10050"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s008",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 8",
+    "summary": null,
+    "status": "completed",
+    "year": 2018,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Magic",
+      "Journey"
+    ],
+    "bookCount": 12,
+    "unreadCount": 12,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10008"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s065",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 65",
+    "summary": null,
+    "status": "completed",
+    "year": 2019,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 19,
+    "unreadCount": 19,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10065"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s020",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 20",
+    "summary": null,
+    "status": "completed",
+    "year": 2016,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Found Family",
+      "Iyashikei",
+      "Cooking"
+    ],
+    "bookCount": 3,
+    "unreadCount": 1,
+    "readState": "inProgress",
+    "externalIds": [
+      "mangabaka:10020"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s061",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 61",
+    "summary": null,
+    "status": "completed",
+    "year": 2015,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "Love Triangle",
+      "School Life"
+    ],
+    "bookCount": 19,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10061"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s014",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 14",
+    "summary": null,
+    "status": "completed",
+    "year": 2010,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Found Family",
+      "Elves",
+      "Journey"
+    ],
+    "bookCount": 12,
+    "unreadCount": 12,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10014"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s062",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 62",
+    "summary": null,
+    "status": "completed",
+    "year": 2016,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 19,
+    "unreadCount": 9,
+    "readState": "inProgress",
+    "externalIds": [
+      "mangabaka:10062"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s028",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 28",
+    "summary": null,
+    "status": "completed",
+    "year": 2010,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Cooking",
+      "Iyashikei"
+    ],
+    "bookCount": 8,
+    "unreadCount": 8,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10028"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s066",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 66",
+    "summary": null,
+    "status": "completed",
+    "year": 2020,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 10,
+    "unreadCount": 10,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10066"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s043",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 43",
+    "summary": null,
+    "status": "completed",
+    "year": 2011,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Rivalry",
+      "Tournament",
+      "Basketball"
+    ],
+    "bookCount": 14,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10043"
+    ],
+    "rating": 52,
+    "ratingNotes": null
+  },
+  {
+    "id": "s005",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Fantasy Series 5",
+    "summary": null,
+    "status": "completed",
+    "year": 2015,
+    "genres": [
+      "Fantasy",
+      "Adventure"
+    ],
+    "tags": [
+      "Magic",
+      "Journey",
+      "Found Family"
+    ],
+    "bookCount": 10,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10005"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s021",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 21",
+    "summary": null,
+    "status": "completed",
+    "year": 2017,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Iyashikei",
+      "Cooking",
+      "Found Family"
+    ],
+    "bookCount": 18,
+    "unreadCount": 18,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10021"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s057",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 57",
+    "summary": null,
+    "status": "completed",
+    "year": 2011,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "School Life",
+      "Love Triangle"
+    ],
+    "bookCount": 6,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10057"
+    ],
+    "rating": 54,
+    "ratingNotes": null
+  },
+  {
+    "id": "s051",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 51",
+    "summary": null,
+    "status": "completed",
+    "year": 2019,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Rivalry",
+      "Basketball",
+      "Tournament"
+    ],
+    "bookCount": 15,
+    "unreadCount": 15,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10051"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s016",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 16",
+    "summary": null,
+    "status": "completed",
+    "year": 2012,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Iyashikei",
+      "Found Family"
+    ],
+    "bookCount": 4,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10016"
+    ],
+    "rating": 85,
+    "ratingNotes": null
+  },
+  {
+    "id": "s054",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Sports Series 54",
+    "summary": null,
+    "status": "completed",
+    "year": 2022,
+    "genres": [
+      "Sports",
+      "Drama"
+    ],
+    "tags": [
+      "Rivalry",
+      "Basketball"
+    ],
+    "bookCount": 8,
+    "unreadCount": 8,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10054"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  },
+  {
+    "id": "s018",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 18",
+    "summary": null,
+    "status": "completed",
+    "year": 2014,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Iyashikei",
+      "Found Family"
+    ],
+    "bookCount": 5,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10018"
+    ],
+    "rating": 77,
+    "ratingNotes": null
+  },
+  {
+    "id": "s058",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Romance Series 58",
+    "summary": null,
+    "status": "completed",
+    "year": 2012,
+    "genres": [
+      "Romance",
+      "Drama"
+    ],
+    "tags": [
+      "Love Triangle",
+      "School Life"
+    ],
+    "bookCount": 9,
+    "unreadCount": 0,
+    "readState": "completed",
+    "externalIds": [
+      "mangabaka:10058"
+    ],
+    "rating": 66,
+    "ratingNotes": null
+  },
+  {
+    "id": "s026",
+    "libraryId": "lib-manga",
+    "libraryName": "Manga",
+    "title": "Slice Series 26",
+    "summary": null,
+    "status": "completed",
+    "year": 2022,
+    "genres": [
+      "Slice of Life",
+      "Comedy"
+    ],
+    "tags": [
+      "Found Family",
+      "Iyashikei",
+      "Cooking"
+    ],
+    "bookCount": 7,
+    "unreadCount": 7,
+    "readState": "untouched",
+    "externalIds": [
+      "mangabaka:10026"
+    ],
+    "rating": null,
+    "ratingNotes": null
+  }
+]

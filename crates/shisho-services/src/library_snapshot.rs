@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::read_state::ReadState;
 use shisho_cache::{Cached, SwrCache, SwrConfig, SwrError};
@@ -32,7 +33,9 @@ use shisho_ids::{ExternalId, Provider};
 const PAGE_SIZE: u64 = 100;
 
 /// One series of the caller's library, as the candidate pools consume it.
-#[derive(Debug, Clone)]
+/// Serializable so a library can be saved as an offline evaluation fixture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SnapshotSeries {
     /// Codex series UUID.
     pub id: String,
@@ -52,11 +55,29 @@ pub struct SnapshotSeries {
     pub read_state: ReadState,
     /// Normalized known-provider IDs (unknown providers are excluded from
     /// joins and tracked in [`LibrarySnapshot::unresolvable`]).
+    #[serde(with = "canonical_ids")]
     pub external_ids: Vec<ExternalId>,
     /// The caller's Codex rating, 1-100 (Codex displays it as 1-10).
     pub rating: Option<i32>,
     /// The caller's free-text notes on that rating.
     pub rating_notes: Option<String>,
+}
+
+/// External ids as their canonical `<token>:<id>` strings on the wire.
+mod canonical_ids {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use shisho_ids::ExternalId;
+
+    pub fn serialize<S: Serializer>(ids: &[ExternalId], ser: S) -> Result<S::Ok, S::Error> {
+        ser.collect_seq(ids.iter().map(ExternalId::canonical_key))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Vec<ExternalId>, D::Error> {
+        Vec::<String>::deserialize(de)?
+            .iter()
+            .map(|raw| ExternalId::from_tsundoku(raw).map_err(serde::de::Error::custom))
+            .collect()
+    }
 }
 
 /// A series that cannot participate in any Tsundoku join: none of its

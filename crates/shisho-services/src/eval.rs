@@ -1,0 +1,252 @@
+//! Offline evaluation of backlog rankers.
+//!
+//! Hold-out replay: every series the caller rated in their own top quartile
+//! is, one at a time, hidden (rating removed, marked untouched) and dropped
+//! into the untouched backlog; the ranker orders that backlog and we record
+//! where the hidden favourite landed. A ranker that understands the caller's
+//! taste puts their known favourites near the top; snapshot order lands them
+//! wherever Codex happens to list them. The hidden series' own rating never
+//! reaches the ranker, or the metric would be circular.
+
+use crate::library_snapshot::{LibrarySnapshot, SnapshotSeries};
+use crate::read_state::ReadState;
+
+/// Orders a backlog, best first.
+pub trait Ranker {
+    fn name(&self) -> &str;
+    /// Indices into `backlog`, best first. `snapshot` is the caller's library
+    /// as the ranker may see it (with any held-out series masked).
+    fn rank(&self, snapshot: &LibrarySnapshot, backlog: &[&SnapshotSeries]) -> Vec<usize>;
+}
+
+/// The baseline: the backlog in the order Codex lists it.
+pub struct SnapshotOrder;
+
+impl Ranker for SnapshotOrder {
+    fn name(&self) -> &str {
+        "snapshot-order"
+    }
+
+    fn rank(&self, _snapshot: &LibrarySnapshot, backlog: &[&SnapshotSeries]) -> Vec<usize> {
+        (0..backlog.len()).collect()
+    }
+}
+
+/// Hold-out metrics for one ranker over one library.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvalReport {
+    pub ranker: String,
+    /// Favourites replayed.
+    pub held_out: usize,
+    /// Mean backlog size the favourites were ranked within.
+    pub mean_backlog: f64,
+    /// Share of favourites ranked in the top 10.
+    pub recall_at_10: f64,
+    /// Share of favourites ranked in the top 40 (the default page).
+    pub recall_at_40: f64,
+    /// Mean reciprocal rank.
+    pub mrr: f64,
+    /// Mean rank as a fraction of the backlog: 0.0 = always first, 1.0 =
+    /// always last; a ranker with no signal sits near 0.5.
+    pub mean_rank_fraction: f64,
+}
+
+/// The caller's favourites: rated at or above their own top-quartile rating.
+pub fn favourites(snapshot: &LibrarySnapshot) -> Vec<&SnapshotSeries> {
+    let mut ratings: Vec<i32> = snapshot.series.iter().filter_map(|s| s.rating).collect();
+    if ratings.is_empty() {
+        return Vec::new();
+    }
+    ratings.sort_unstable_by(|a, b| b.cmp(a));
+    let threshold = ratings[ratings.len() / 4];
+    snapshot
+        .series
+        .iter()
+        .filter(|s| s.rating.is_some_and(|r| r >= threshold))
+        .collect()
+}
+
+/// Replay every favourite through `ranker`. `None` when the library has no
+/// ratings to hold out.
+pub fn evaluate(snapshot: &LibrarySnapshot, ranker: &dyn Ranker) -> Option<EvalReport> {
+    let favourites: Vec<String> = favourites(snapshot).iter().map(|s| s.id.clone()).collect();
+    if favourites.is_empty() {
+        return None;
+    }
+
+    let mut ranks: Vec<(usize, usize)> = Vec::with_capacity(favourites.len());
+    for held in &favourites {
+        let masked = mask(snapshot, held);
+        let backlog: Vec<&SnapshotSeries> = masked
+            .series
+            .iter()
+            .filter(|s| s.read_state == ReadState::Untouched)
+            .collect();
+        let order = ranker.rank(&masked, &backlog);
+        let position = order
+            .iter()
+            .position(|&i| backlog[i].id == *held)
+            .expect("ranker must return every backlog index");
+        ranks.push((position + 1, backlog.len()));
+    }
+
+    let n = ranks.len() as f64;
+    let share = |k: usize| ranks.iter().filter(|(r, _)| *r <= k).count() as f64 / n;
+    Some(EvalReport {
+        ranker: ranker.name().to_owned(),
+        held_out: ranks.len(),
+        mean_backlog: ranks.iter().map(|(_, len)| *len as f64).sum::<f64>() / n,
+        recall_at_10: share(10),
+        recall_at_40: share(40),
+        mrr: ranks.iter().map(|(r, _)| 1.0 / *r as f64).sum::<f64>() / n,
+        mean_rank_fraction: ranks
+            .iter()
+            .map(|(r, len)| {
+                if *len <= 1 {
+                    0.0
+                } else {
+                    (*r - 1) as f64 / (*len - 1) as f64
+                }
+            })
+            .sum::<f64>()
+            / n,
+    })
+}
+
+/// The library with `held` hidden: unrated, notes dropped, and untouched.
+fn mask(snapshot: &LibrarySnapshot, held: &str) -> LibrarySnapshot {
+    let series = snapshot
+        .series
+        .iter()
+        .map(|s| {
+            if s.id == held {
+                SnapshotSeries {
+                    rating: None,
+                    rating_notes: None,
+                    read_state: ReadState::Untouched,
+                    unread_count: Some(s.book_count),
+                    ..s.clone()
+                }
+            } else {
+                s.clone()
+            }
+        })
+        .collect();
+    LibrarySnapshot::from_series(series)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    pub(crate) fn series(id: &str, state: ReadState, rating: Option<i32>) -> SnapshotSeries {
+        SnapshotSeries {
+            id: id.into(),
+            library_id: "lib".into(),
+            library_name: "Manga".into(),
+            title: id.into(),
+            summary: None,
+            status: None,
+            year: None,
+            genres: Vec::new(),
+            tags: Vec::new(),
+            book_count: 5,
+            unread_count: Some(if state == ReadState::Completed { 0 } else { 5 }),
+            read_state: state,
+            external_ids: Vec::new(),
+            rating,
+            rating_notes: None,
+        }
+    }
+
+    /// Ranks the held-out favourite first by cheating on its id.
+    struct Oracle(&'static str);
+    impl Ranker for Oracle {
+        fn name(&self) -> &str {
+            "oracle"
+        }
+        fn rank(&self, _: &LibrarySnapshot, backlog: &[&SnapshotSeries]) -> Vec<usize> {
+            let mut order: Vec<usize> = (0..backlog.len()).collect();
+            order.sort_by_key(|&i| backlog[i].id != self.0);
+            order
+        }
+    }
+
+    fn library() -> LibrarySnapshot {
+        let mut all: Vec<SnapshotSeries> = (0..19)
+            .map(|i| series(&format!("u{i}"), ReadState::Untouched, None))
+            .collect();
+        // The only rating, listed last: snapshot order ranks it last.
+        all.push(series("fav", ReadState::Completed, Some(95)));
+        LibrarySnapshot::from_series(all)
+    }
+
+    #[test]
+    fn eval_snapshot_order_ranks_a_last_listed_favourite_last() {
+        let report = evaluate(&library(), &SnapshotOrder).expect("one favourite");
+        assert_eq!(report.held_out, 1);
+        assert_eq!(report.mean_backlog, 20.0);
+        assert_eq!(report.recall_at_10, 0.0);
+        assert_eq!(report.mean_rank_fraction, 1.0);
+        assert!((report.mrr - 1.0 / 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn eval_a_perfect_ranker_scores_one() {
+        let report = evaluate(&library(), &Oracle("fav")).expect("one favourite");
+        assert_eq!(report.recall_at_10, 1.0);
+        assert_eq!(report.mrr, 1.0);
+        assert_eq!(report.mean_rank_fraction, 0.0);
+    }
+
+    #[test]
+    fn eval_hides_the_held_out_rating_from_the_ranker() {
+        struct Peek;
+        impl Ranker for Peek {
+            fn name(&self) -> &str {
+                "peek"
+            }
+            fn rank(&self, snapshot: &LibrarySnapshot, backlog: &[&SnapshotSeries]) -> Vec<usize> {
+                let fav = snapshot.series_by_uuid("fav").unwrap();
+                assert_eq!(fav.rating, None, "held-out rating leaked");
+                assert_eq!(fav.read_state, ReadState::Untouched);
+                (0..backlog.len()).collect()
+            }
+        }
+        evaluate(&library(), &Peek).unwrap();
+    }
+
+    #[test]
+    fn eval_favourites_are_the_top_quartile() {
+        let lib = LibrarySnapshot::from_series(vec![
+            series("a", ReadState::Completed, Some(90)),
+            series("b", ReadState::Completed, Some(80)),
+            series("c", ReadState::Completed, Some(60)),
+            series("d", ReadState::Completed, Some(40)),
+            series("e", ReadState::Completed, Some(20)),
+        ]);
+        let ids: Vec<&str> = favourites(&lib).iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn eval_fixture_roundtrips_through_json() {
+        let mut fav = series("fav", ReadState::Completed, Some(95));
+        fav.external_ids =
+            vec![shisho_ids::ExternalId::from_codex("plugin:myanimelist:42").unwrap()];
+        let json = serde_json::to_string(&vec![fav]).unwrap();
+        assert!(
+            json.contains("\"mal:42\""),
+            "ids serialize canonically: {json}"
+        );
+        let back: Vec<SnapshotSeries> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back[0].external_ids[0].canonical_key(), "mal:42");
+        assert_eq!(back[0].rating, Some(95));
+    }
+
+    #[test]
+    fn eval_without_ratings_has_nothing_to_replay() {
+        let lib = LibrarySnapshot::from_series(vec![series("a", ReadState::Untouched, None)]);
+        assert!(evaluate(&lib, &SnapshotOrder).is_none());
+    }
+}

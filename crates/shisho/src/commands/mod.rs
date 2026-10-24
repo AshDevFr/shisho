@@ -1,4 +1,5 @@
 pub mod encryption;
+pub mod eval;
 pub mod mangabaka;
 pub mod mcp;
 pub mod migrate;

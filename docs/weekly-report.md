@@ -27,7 +27,9 @@ There is no prompt copy to drift out of sync — edit the template, rebuild.
   contains none).
 - The `shisho` binary on `PATH` (or set `SHISHO_BIN`) so the runner can
   render the prompt.
-- A Codex API key for the user the report is for. **The cron environment
+- A Codex API key for the user the report is for, with `series:read`,
+  `libraries:read`, `books:read` and `progress:read` (see the README's
+  permission table). **The cron environment
   holds the key, never Shisho** — Shisho resolves it per-request against
   Codex `/me` exactly like an interactive session.
 - Network reach to the Shisho MCP endpoint (`https://<shisho>/mcp`).

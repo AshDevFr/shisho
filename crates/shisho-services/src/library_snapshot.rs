@@ -180,9 +180,11 @@ pub fn unmatched_selectors(snapshot: &LibrarySnapshot, selectors: &[String]) -> 
 }
 
 /// Runs after every successful snapshot build (inline or background
-/// refresh) with the user and the fresh snapshot — the lazy-reconciliation
-/// trigger. Must not block: spawn any real work.
-pub type SnapshotBuildHook = Arc<dyn Fn(&str, &Arc<LibrarySnapshot>) + Send + Sync>;
+/// refresh) with the user, the Codex client and credential the snapshot was
+/// built with, and the fresh snapshot — the lazy-reconciliation trigger.
+/// Must not block: spawn any real work.
+pub type SnapshotBuildHook =
+    Arc<dyn Fn(&str, &CodexClient, &CodexCredential, &Arc<LibrarySnapshot>) + Send + Sync>;
 
 /// A cached local index of the caller's Codex library: canonical external id
 /// (`<source>:<id>`) -> Codex series UUID. Built from the cheap `external-index`
@@ -234,7 +236,7 @@ impl LibrarySnapshotService {
             .get_or_load(user_sub.to_owned(), move || async move {
                 let snapshot = build(&codex, &credential).await.map(Arc::new)?;
                 if let Some(hook) = hook {
-                    hook(&key, &snapshot);
+                    hook(&key, &codex, &credential, &snapshot);
                 }
                 Ok(snapshot)
             })

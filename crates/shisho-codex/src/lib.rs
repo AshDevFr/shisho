@@ -231,6 +231,25 @@ pub struct UserSeriesRating {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// One book of a series (`BookDto`), reduced to the caller's progress.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesBook {
+    pub id: String,
+    /// Absent when the caller never opened the book.
+    #[serde(default)]
+    pub read_progress: Option<BookProgress>,
+}
+
+/// The caller's progress through one book (`ReadProgressResponse`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookProgress {
+    pub completed: bool,
+    /// When the progress last moved.
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// `GET /api/v1/user/ratings` envelope (`UserRatingsListResponse`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +285,13 @@ pub enum Scope {
     SeriesRead,
     /// `libraries:read` — list the caller's libraries.
     LibrariesRead,
+    /// `books:read` — a series' books, which carry the caller's per-book
+    /// read progress (stall detection on recommended series).
+    BooksRead,
+    /// `progress:read` — the caller's reading progress. The books endpoint
+    /// embeds progress today under `books:read` alone; holding this keeps
+    /// stall detection working if Codex gates that progress separately.
+    ProgressRead,
 }
 
 impl Scope {
@@ -274,16 +300,22 @@ impl Scope {
         match self {
             Scope::SeriesRead => "series:read",
             Scope::LibrariesRead => "libraries:read",
+            Scope::BooksRead => "books:read",
+            Scope::ProgressRead => "progress:read",
         }
     }
 }
 
 /// The least-privilege scope set for a Shisho-minted Codex key. Read-only:
-/// `series:read` + `libraries:read`. Rating-write is deliberately not
-/// requested — Codex currently gates rating writes under `series:read` (no
-/// dedicated permission), so Shisho does not exercise them until Codex
-/// separates that permission; withholding `books:read` blocks progress writes.
-pub const SHISHO_KEY_SCOPES: &[Scope] = &[Scope::SeriesRead, Scope::LibrariesRead];
+/// no Codex write permission is requested. Rating writes stay unused because
+/// Codex gates them under `series:read` (no dedicated permission); progress
+/// writes need `progress:write`, which is never requested.
+pub const SHISHO_KEY_SCOPES: &[Scope] = &[
+    Scope::SeriesRead,
+    Scope::LibrariesRead,
+    Scope::BooksRead,
+    Scope::ProgressRead,
+];
 
 /// `POST /api/v1/api-keys` request body. `permissions` is always sent
 /// explicitly: omitting it makes Codex copy the caller's (broad) permissions,
@@ -461,6 +493,18 @@ impl CodexClient {
             return Ok(None);
         }
         Self::decode(resp, &endpoint).await
+    }
+
+    /// `GET /api/v1/series/{id}/books` — the series' books with the caller's
+    /// read progress on each.
+    pub async fn series_books(
+        &self,
+        credential: &CodexCredential,
+        series_id: &str,
+    ) -> Result<Vec<SeriesBook>, CodexError> {
+        let endpoint = format!("/api/v1/series/{series_id}/books");
+        let req = self.get(&endpoint)?;
+        self.send(Self::authed(req, credential), &endpoint).await
     }
 
     /// `PUT /api/v1/series/{id}/rating` — write the caller's rating/notes

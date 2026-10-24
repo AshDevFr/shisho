@@ -30,6 +30,25 @@ make build            # builds web/dist, then `cargo build --release --features 
 ./target/release/shisho serve
 ```
 
+## Codex API key permissions
+
+Shisho reads each user's library through a Codex API key. At sign-in it mints
+a dedicated key itself; a key you create by hand (for the weekly report, or
+to replace a minted one) needs the same permissions. All are read-only:
+
+| Permission | Used for |
+|---|---|
+| `series:read` | the library snapshot: series, unread counts, external ids, ratings |
+| `libraries:read` | listing and scoping libraries |
+| `books:read` | per-book read progress of recommended series, to notice a stalled read |
+| `progress:read` | the same progress data; held so stall checks keep working if Codex gates it separately |
+
+Without `books:read` and `progress:read` everything else works; Shisho only
+skips recording stalled reads as abandoned. Shisho never asks for a write
+permission. A key minted before a permission was added keeps its old set:
+edit the key's permissions in Codex, or sign in again with a forced key
+regeneration.
+
 ## Common commands
 
 ```bash

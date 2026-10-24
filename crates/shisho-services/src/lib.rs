@@ -27,8 +27,8 @@ use sea_orm::DatabaseConnection;
 use shisho_config::CacheConfig;
 
 use shisho_cache::SwrConfig;
-use shisho_codex::CodexClient;
 pub use shisho_codex::UserCtx;
+use shisho_codex::{CodexClient, CodexCredential};
 use shisho_mangabaka::MangabakaProvider;
 use shisho_tsundoku::TsundokuClient;
 
@@ -68,13 +68,26 @@ impl Services {
         // authenticated touch) re-runs flag detection for that user, so
         // users without warm snapshots at sweep time still reconcile.
         let hook_db = db.clone();
-        let build_hook: library_snapshot::SnapshotBuildHook =
-            std::sync::Arc::new(move |user_sub: &str, snapshot| {
+        let build_hook: library_snapshot::SnapshotBuildHook = std::sync::Arc::new(
+            move |user_sub: &str, codex: &CodexClient, credential: &CodexCredential, snapshot| {
                 let db = hook_db.clone();
                 let user_sub = user_sub.to_owned();
+                let codex = codex.clone();
+                let credential = credential.clone();
                 let snapshot = std::sync::Arc::clone(snapshot);
                 tokio::spawn(async move {
-                    match reconciliation::reconcile_user(&db, &user_sub, Some(&snapshot)).await {
+                    let access = reconciliation::CodexAccess {
+                        client: &codex,
+                        credential: &credential,
+                    };
+                    match reconciliation::reconcile_user(
+                        &db,
+                        &user_sub,
+                        Some(&snapshot),
+                        Some(access),
+                    )
+                    .await
+                    {
                         Ok(outcome)
                             if outcome.flagged > 0
                                 || outcome.resolved > 0
@@ -94,7 +107,8 @@ impl Services {
                         }
                     }
                 });
-            });
+            },
+        );
 
         Self {
             tsundoku_owned_prefilter,

@@ -35,7 +35,7 @@ struct FeedbackView {
     #[serde(skip_serializing_if = "Option::is_none")]
     notes: Option<String>,
     /// Shisho recorded this from Codex (a rating set after the
-    /// recommendation), not the user.
+    /// recommendation, or a stalled read), not the user.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     inferred: bool,
     recorded_at: DateTime<Utc>,

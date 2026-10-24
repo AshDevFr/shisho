@@ -63,8 +63,9 @@ pub async fn mint_and_store(
     authz: &CodexCredential,
     key_name: &str,
 ) -> Result<String, IdentityError> {
-    // 1. Mint the narrow key. The scope set is fixed (series:read +
-    //    libraries:read); it is never derived from the caller's permissions.
+    // 1. Mint the narrow key. The scope set is fixed and read-only
+    //    (`SHISHO_KEY_SCOPES`); it is never derived from the caller's
+    //    permissions.
     let minted = codex
         .mint_api_key(authz, key_name, SHISHO_KEY_SCOPES)
         .await?;

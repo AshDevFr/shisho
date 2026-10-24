@@ -111,7 +111,8 @@ key_version = 1
 [codex]
 # Base URL of the Codex instance (identity, per-user library, read state,
 # ratings). Deployment configuration, never a tool parameter. Empty = not
-# configured.
+# configured. The per-user Codex keys Shisho uses need series:read,
+# libraries:read, books:read and progress:read (see README).
 base_url = ""
 
 [tsundoku]

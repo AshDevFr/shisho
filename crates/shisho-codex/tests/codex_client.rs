@@ -275,7 +275,7 @@ async fn mint_api_key_sends_least_priv_scopes_and_parses_the_one_time_key() {
         .and(header("Authorization", "Bearer onboarding-token"))
         .and(body_json(serde_json::json!({
             "name": "shisho",
-            "permissions": ["series:read", "libraries:read"]
+            "permissions": ["series:read", "libraries:read", "books:read", "progress:read"]
         })))
         .respond_with(ResponseTemplate::new(201).set_body_json(fixture("mint_api_key")))
         .expect(1)
@@ -324,4 +324,34 @@ async fn set_series_rating_is_available_on_the_client() {
         .await
         .expect("put rating");
     assert_eq!(written.series_id, series_id);
+}
+
+#[tokio::test]
+async fn series_books_carry_the_callers_read_progress() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/s-1/books"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            { "id": "b-1", "seriesId": "s-1", "title": "Vol. 1",
+              "readProgress": { "id": "p-1", "bookId": "b-1", "userId": "u", "currentPage": 180,
+                                "completed": true, "completedAt": "2026-05-01T10:00:00Z",
+                                "startedAt": "2026-04-30T10:00:00Z",
+                                "updatedAt": "2026-05-01T10:00:00Z", "progressPercentage": 1.0 } },
+            { "id": "b-2", "seriesId": "s-1", "title": "Vol. 2" }
+        ])))
+        .mount(&server)
+        .await;
+
+    let books = client(&server)
+        .series_books(&api_key(), "s-1")
+        .await
+        .expect("books");
+    assert_eq!(books.len(), 2);
+    let progress = books[0].read_progress.as_ref().expect("progress");
+    assert!(progress.completed);
+    assert_eq!(
+        progress.updated_at.to_rfc3339(),
+        "2026-05-01T10:00:00+00:00"
+    );
+    assert!(books[1].read_progress.is_none());
 }

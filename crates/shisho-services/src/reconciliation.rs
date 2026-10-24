@@ -1,12 +1,17 @@
 //! Outcome reconciliation: detect verdicts with no recorded outcome whose
 //! series now shows read progress, and flag them for the next
 //! consolidation ("you started X after it was recommended — outcome?").
+//! Where Codex already answers the question, record the outcome instead:
+//! a rating set after the recommendation, or a read that stalled (unread
+//! books left and no progress for [`STALL_AFTER`]) as `dnf`. Inferred
+//! outcomes are revised when the evidence changes and never follow an
+//! outcome the user recorded.
 //!
-//! Detection needs per-user Codex read state, which Shisho cannot
-//! originate (it stores no credentials). It therefore runs against the
-//! library snapshot **when one is warm for that user** — from the weekly
-//! sweep over cached snapshots, and lazily on every snapshot build (the
-//! user's next authenticated touch). No warm snapshot means no flags, and
+//! Detection needs per-user Codex read state. It runs against the library
+//! snapshot **when one is warm for that user** — from the weekly sweep over
+//! cached snapshots, and lazily on every snapshot build (the user's next
+//! authenticated touch). Stall checks need the user's credential, so only
+//! the snapshot-build path runs them. No warm snapshot means no flags, and
 //! never a false one.
 //!
 //! Resolution is snapshot-independent: a series whose verdict fold carries
@@ -21,9 +26,11 @@ use sea_orm::DatabaseConnection;
 use crate::affinity::RatingScale;
 use crate::library_snapshot::{LibrarySnapshot, SnapshotSeries};
 use crate::read_state::ReadState;
-use crate::verdicts::FEEDBACK_SESSION;
+use crate::verdicts::{FEEDBACK_SESSION, Outcome};
+use chrono::{DateTime, Utc};
+use shisho_codex::{CodexClient, CodexCredential};
 use shisho_db::entities::verdict;
-use shisho_db::repos::verdicts::NewVerdict;
+use shisho_db::repos::verdicts::{NewVerdict, REOPENED};
 use shisho_db::repos::{reconciliation, verdicts};
 use shisho_ids::{ExternalId, Provider};
 
@@ -42,12 +49,24 @@ pub struct ReconcileOutcome {
 /// the user. Any other session's outcome is the user's own and final.
 pub const AUTO_FEEDBACK_SESSION: &str = "codex-auto";
 
+/// How long a read with unread books left may go without progress before it
+/// counts as abandoned.
+pub const STALL_AFTER: chrono::TimeDelta = chrono::TimeDelta::days(90);
+
+/// Codex access for the checks that need a live call (book progress).
+#[derive(Clone, Copy)]
+pub struct CodexAccess<'a> {
+    pub client: &'a CodexClient,
+    pub credential: &'a CodexCredential,
+}
+
 /// One reconciliation pass for one user. `snapshot` is the warm library
 /// snapshot when one exists; without it only the resolve pass runs.
 pub async fn reconcile_user(
     db: &DatabaseConnection,
     user_sub: &str,
     snapshot: Option<&LibrarySnapshot>,
+    codex: Option<CodexAccess<'_>>,
 ) -> Result<ReconcileOutcome, sea_orm::DbErr> {
     let rows = verdicts::list_for_user(db, user_sub).await?;
 
@@ -78,36 +97,42 @@ pub async fn reconcile_user(
             (snapshot, scale, standing, user_answered)
         {
             let identities = identity_keys(rows);
-            let evidence = matching_series(snapshot, &identities)
+            let copies: Vec<&SnapshotSeries> = matching_series(snapshot, &identities).collect();
+            let rated = copies
+                .iter()
                 .filter_map(|s| Some((s.rating?, s.rating_updated_at?)))
                 .filter(|(_, at)| *at > recommended_at)
                 .max_by_key(|(_, at)| *at);
-            if let Some((rating, at)) = evidence {
-                let inferred = scale.outcome(rating);
-                if state.outcome.as_deref() != Some(inferred.as_str()) {
-                    let row = verdicts::insert(
-                        db,
-                        user_sub,
-                        NewVerdict {
-                            external_id: ExternalId::from_tsundoku(&key.token()).ok(),
-                            session_id: AUTO_FEEDBACK_SESSION.into(),
-                            tier: FEEDBACK_SESSION.into(),
-                            rationale: "inferred from Codex".into(),
-                            verified: false,
-                            retracted: false,
-                            retraction_reason: None,
-                            outcome: Some(inferred.as_str().to_owned()),
-                            notes: Some(format!(
-                                "Rated {rating}/100 in Codex on {}",
-                                at.format("%Y-%m-%d")
-                            )),
-                        },
-                    )
-                    .await?;
-                    rows.push(row);
-                    state = verdicts::fold(rows);
-                    outcome.inferred += 1;
-                }
+            let current = state.outcome.as_deref();
+            let decision = match rated {
+                Some((rating, at)) => Some((
+                    scale.outcome(rating).as_str(),
+                    format!("Rated {rating}/100 in Codex on {}", at.format("%Y-%m-%d")),
+                )),
+                None => read_state_decision(&copies, current, codex).await,
+            }
+            .filter(|(inferred, _)| current != Some(*inferred));
+
+            if let Some((inferred, notes)) = decision {
+                let row = verdicts::insert(
+                    db,
+                    user_sub,
+                    NewVerdict {
+                        external_id: ExternalId::from_tsundoku(&key.token()).ok(),
+                        session_id: AUTO_FEEDBACK_SESSION.into(),
+                        tier: FEEDBACK_SESSION.into(),
+                        rationale: "inferred from Codex".into(),
+                        verified: false,
+                        retracted: false,
+                        retraction_reason: None,
+                        outcome: Some(inferred.to_owned()),
+                        notes: Some(notes),
+                    },
+                )
+                .await?;
+                rows.push(row);
+                state = verdicts::fold(rows);
+                outcome.inferred += 1;
             }
         }
 
@@ -136,6 +161,73 @@ pub async fn reconcile_user(
         }
     }
     Ok(outcome)
+}
+
+/// What the read state of a recommended series says, short of a rating:
+/// `dnf` for a stalled read, `reopened` when an inferred `dnf` is
+/// contradicted (finished, caught up, or reading again). `None` when there
+/// is no evidence either way, including when Codex could not be asked.
+async fn read_state_decision(
+    copies: &[&SnapshotSeries],
+    current: Option<&str>,
+    codex: Option<CodexAccess<'_>>,
+) -> Option<(&'static str, String)> {
+    let inferred_dnf = current == Some(Outcome::Dnf.as_str());
+    let caught_up = copies.iter().any(|s| {
+        s.read_state == ReadState::Completed
+            || (s.read_state == ReadState::InProgress && s.unread_count == Some(0))
+    });
+    if caught_up {
+        return inferred_dnf.then(|| (REOPENED, "Finished or caught up in Codex".to_owned()));
+    }
+    let reading: Vec<&&SnapshotSeries> = copies
+        .iter()
+        .filter(|s| s.read_state == ReadState::InProgress && s.unread_count.is_some_and(|n| n > 0))
+        .collect();
+    if reading.is_empty() {
+        return None;
+    }
+    let last = last_progress(codex?, &reading).await?;
+    if Utc::now() - last >= STALL_AFTER {
+        Some((
+            Outcome::Dnf.as_str(),
+            format!(
+                "No reading progress in Codex since {}",
+                last.format("%Y-%m-%d")
+            ),
+        ))
+    } else {
+        inferred_dnf.then(|| {
+            (
+                REOPENED,
+                format!("Reading resumed in Codex on {}", last.format("%Y-%m-%d")),
+            )
+        })
+    }
+}
+
+/// When progress last moved on any of `series`, or `None` when Codex could
+/// not say (a failed call, or no progress recorded at all).
+async fn last_progress(
+    codex: CodexAccess<'_>,
+    series: &[&&SnapshotSeries],
+) -> Option<DateTime<Utc>> {
+    let mut last: Option<DateTime<Utc>> = None;
+    for s in series {
+        let books = match codex.client.series_books(codex.credential, &s.id).await {
+            Ok(books) => books,
+            Err(err) => {
+                tracing::warn!(series = %s.id, error = %err, "book progress unavailable; skipping the stall check");
+                return None;
+            }
+        };
+        let newest = books
+            .iter()
+            .filter_map(|b| b.read_progress.as_ref().map(|p| p.updated_at))
+            .max();
+        last = last.max(newest);
+    }
+    last
 }
 
 /// The caller's series (every copy) carrying one of `identities`.
@@ -236,11 +328,11 @@ mod tests {
         let snapshot =
             LibrarySnapshot::from_series(vec![series("mangabaka:1", ReadState::InProgress)]);
 
-        let first = reconcile_user(&db, "user-1", Some(&snapshot))
+        let first = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(first.flagged, 1);
-        let again = reconcile_user(&db, "user-1", Some(&snapshot))
+        let again = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(again.flagged, 0, "re-run never re-flags");
@@ -263,7 +355,7 @@ mod tests {
         let snapshot =
             LibrarySnapshot::from_series(vec![series("mangabaka:1", ReadState::Untouched)]);
 
-        let pass = reconcile_user(&db, "user-1", Some(&snapshot))
+        let pass = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(pass, ReconcileOutcome::default());
@@ -276,13 +368,13 @@ mod tests {
             .await
             .unwrap();
 
-        let cold = reconcile_user(&db, "user-1", None).await.unwrap();
+        let cold = reconcile_user(&db, "user-1", None, None).await.unwrap();
         assert_eq!(cold.flagged, 0);
 
         // The next snapshot build (the user's next touch) flags it.
         let snapshot =
             LibrarySnapshot::from_series(vec![series("mangabaka:1", ReadState::Completed)]);
-        let warm = reconcile_user(&db, "user-1", Some(&snapshot))
+        let warm = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(warm.flagged, 1);
@@ -296,14 +388,14 @@ mod tests {
             .unwrap();
         let snapshot =
             LibrarySnapshot::from_series(vec![series("mangabaka:1", ReadState::InProgress)]);
-        reconcile_user(&db, "user-1", Some(&snapshot))
+        reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
 
         verdicts::insert(&db, "user-1", feedback("mangabaka:1", "loved"))
             .await
             .unwrap();
-        let pass = reconcile_user(&db, "user-1", Some(&snapshot))
+        let pass = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(pass.resolved, 1);
@@ -314,7 +406,7 @@ mod tests {
         );
 
         // Re-running after resolution neither re-flags nor re-resolves.
-        let idle = reconcile_user(&db, "user-1", Some(&snapshot))
+        let idle = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(idle, ReconcileOutcome::default());
@@ -342,7 +434,7 @@ mod tests {
         let snapshot =
             LibrarySnapshot::from_series(vec![series("mangabaka:1", ReadState::InProgress)]);
 
-        let pass = reconcile_user(&db, "user-1", Some(&snapshot))
+        let pass = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(pass.flagged, 0);
@@ -387,7 +479,7 @@ mod tests {
         let later = chrono::Utc::now() + chrono::Duration::hours(1);
         let snapshot = rated_library(vec![rated_at("mangabaka:1", 90, later)]);
 
-        let pass = reconcile_user(&db, "user-1", Some(&snapshot))
+        let pass = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(pass.inferred, 1);
@@ -397,7 +489,7 @@ mod tests {
             vec![(Some("loved".into()), AUTO_FEEDBACK_SESSION.into())]
         );
 
-        let again = reconcile_user(&db, "user-1", Some(&snapshot))
+        let again = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(again.inferred, 0);
@@ -413,7 +505,7 @@ mod tests {
         let later = chrono::Utc::now() + chrono::Duration::hours(1);
         for (rating, expected) in [(78, "liked"), (60, "mixed")] {
             let snapshot = rated_library(vec![rated_at("mangabaka:1", rating, later)]);
-            reconcile_user(&db, "user-1", Some(&snapshot))
+            reconcile_user(&db, "user-1", Some(&snapshot), None)
                 .await
                 .unwrap();
             let latest = outcomes(&db).await.pop().unwrap();
@@ -430,7 +522,7 @@ mod tests {
         let earlier = chrono::Utc::now() - chrono::Duration::days(30);
         let snapshot = rated_library(vec![rated_at("mangabaka:1", 95, earlier)]);
 
-        reconcile_user(&db, "user-1", Some(&snapshot))
+        reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert!(outcomes(&db).await.is_empty());
@@ -448,7 +540,7 @@ mod tests {
         let later = chrono::Utc::now() + chrono::Duration::hours(1);
         let snapshot = rated_library(vec![rated_at("mangabaka:1", 95, later)]);
 
-        let pass = reconcile_user(&db, "user-1", Some(&snapshot))
+        let pass = reconcile_user(&db, "user-1", Some(&snapshot), None)
             .await
             .unwrap();
         assert_eq!(pass.inferred, 0);

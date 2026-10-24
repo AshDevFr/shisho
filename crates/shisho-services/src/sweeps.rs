@@ -107,6 +107,9 @@ pub async fn run_reconcile_sweep(
             &services.db,
             user_sub,
             snapshot.as_ref().map(|hit| hit.value.as_ref()),
+            // No credential here: stall checks run on the user's own
+            // snapshot builds, which carry one.
+            None,
         )
         .await?;
         report.flagged += outcome.flagged;

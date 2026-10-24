@@ -21,9 +21,10 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 
-use crate::library_snapshot::{self, SnapshotSeries};
+use crate::library_snapshot::{self, CodexIndex, SnapshotSeries};
 use crate::read_state::ReadState;
 use crate::verdicts::VerdictIndex;
 use crate::{Services, UserCtx};
@@ -41,6 +42,8 @@ const CATALOG_PAGE_SIZE: u32 = 50;
 /// Acquirable pool: stop examining the catalog after this many items even
 /// if the target is not met (bounds work when filters reject everything).
 const MAX_EXAMINED_FACTOR: usize = 8;
+/// Backend calls in flight per pool while enriching candidates.
+const FAN_OUT: usize = 8;
 /// Feed page size for batched external-ID resolution.
 const RESOLUTION_PAGE_LIMIT: u32 = 100;
 
@@ -279,41 +282,31 @@ async fn library_pool(
     let mut tsundoku_as_of: Option<DateTime<Utc>> = None;
     let mut truncated = false;
 
-    for series in &backlog {
-        if candidates.len() == limit {
-            truncated = true;
-            break;
+    // Enrichment runs a bounded number of series ahead of the consumer, so
+    // stopping at `limit` stops the backend calls too. The futures are built
+    // up front but only run when the buffered stream polls them (mapping
+    // inside the stream trips a higher-ranked lifetime error once callers
+    // require `Send`).
+    let pending: Vec<_> = backlog
+        .iter()
+        .map(|series| enrich_backlog_series(services, &resolution, series))
+        .collect();
+    let mut enriched = stream::iter(pending).buffered(FAN_OUT);
+
+    while let Some((candidate, as_of)) = enriched.next().await {
+        if let Some(as_of) = as_of {
+            tsundoku_as_of = oldest(tsundoku_as_of, as_of);
         }
-
-        let resolved = series
-            .external_ids
-            .iter()
-            .find_map(|id| resolution.get(&canonical(id)));
-
-        let mut candidate = match resolved {
-            Some(resolved) => match services.tsundoku.detail(resolved.series_id).await {
-                Ok(hit) => {
-                    tsundoku_as_of = oldest(tsundoku_as_of, hit.as_of);
-                    enriched_candidate(series, &hit.value, resolved)
-                }
-                Err(err) => {
-                    tracing::warn!(series = %series.title, error = %err,
-                        "Tsundoku detail failed; candidate degrades to enrichment=none");
-                    codex_only_candidate(series)
-                }
-            },
-            None => codex_only_candidate(series),
-        };
-        // Backbone backfill before the filter pass, so dump genres/status
-        // participate in matching.
-        backfill_from_mangabaka(services, &mut candidate).await;
-
         if !filters.matches(
             &candidate.genres,
             &candidate.tags,
             candidate.status.as_deref(),
         ) {
             continue;
+        }
+        if candidates.len() == limit {
+            truncated = true;
+            break;
         }
         candidates.push(candidate);
     }
@@ -386,44 +379,31 @@ async fn acquirable_pool(
             break;
         }
 
-        for item in items {
+        let pending: Vec<_> = items
+            .iter()
+            .map(|item| catalog_item_candidate(services, &owned_index, &verdicts, item.id))
+            .collect();
+        let mut details = stream::iter(pending).buffered(FAN_OUT);
+
+        let mut consumed = 0usize;
+        loop {
             if candidates.len() == limit || examined == max_examined {
-                truncated = true;
+                truncated = consumed < items.len() || page_has_more(page, list_hit.value.total);
                 break 'pages;
             }
+            let Some(result) = details.next().await else {
+                break;
+            };
+            consumed += 1;
             examined += 1;
-
-            // The detail call carries the external IDs the anti-join needs;
-            // a candidate that cannot be ownership-checked is never shipped.
-            let detail_hit = services.tsundoku.detail(item.id).await.map_err(degraded)?;
-            tsundoku_as_of = oldest(tsundoku_as_of, detail_hit.as_of);
-            let detail = detail_hit.value;
-
-            let external_ids: Vec<ExternalId> = detail
-                .external_ids
-                .iter()
-                .map(|e| e.normalized())
-                .filter(|e| !matches!(e.provider, Provider::Other(_)))
-                .collect();
-
-            // The mandatory per-user, Codex-authoritative anti-join.
-            if external_ids
-                .iter()
-                .any(|e| owned_index.contains_key(&canonical(e)))
-            {
-                continue;
+            let (candidate, as_of) = result.map_err(degraded)?;
+            tsundoku_as_of = oldest(tsundoku_as_of, as_of);
+            if let Some(candidate) = candidate {
+                candidates.push(candidate);
             }
-            if verdicts.excludes(&external_ids) {
-                continue;
-            }
-
-            let mut candidate = catalog_candidate(&detail, &external_ids);
-            backfill_from_mangabaka(services, &mut candidate).await;
-            candidates.push(candidate);
         }
 
-        let total = list_hit.value.total;
-        if (u64::from(page) + 1) * u64::from(CATALOG_PAGE_SIZE) >= total as u64 {
+        if !page_has_more(page, list_hit.value.total) {
             break;
         }
         page += 1;
@@ -442,6 +422,69 @@ async fn acquirable_pool(
         },
         truncated,
     })
+}
+
+/// One backlog series as a candidate: Tsundoku-enriched where it resolves,
+/// Codex-only otherwise, then backfilled from the backbone. Returns the
+/// Tsundoku data age when Tsundoku contributed.
+async fn enrich_backlog_series(
+    services: &Services,
+    resolution: &HashMap<String, Resolved>,
+    series: &SnapshotSeries,
+) -> (Candidate, Option<DateTime<Utc>>) {
+    let resolved = series
+        .external_ids
+        .iter()
+        .find_map(|id| resolution.get(&canonical(id)));
+    let (mut candidate, as_of) = match resolved {
+        Some(resolved) => match services.tsundoku.detail(resolved.series_id).await {
+            Ok(hit) => (
+                enriched_candidate(series, &hit.value, resolved),
+                Some(hit.as_of),
+            ),
+            Err(err) => {
+                tracing::warn!(series = %series.title, error = %err,
+                    "Tsundoku detail failed; candidate degrades to enrichment=none");
+                (codex_only_candidate(series), None)
+            }
+        },
+        None => (codex_only_candidate(series), None),
+    };
+    // Backbone backfill before the filter pass, so dump genres/status
+    // participate in matching.
+    backfill_from_mangabaka(services, &mut candidate).await;
+    (candidate, as_of)
+}
+
+/// One catalog item as an acquirable candidate, or `None` when the caller
+/// owns it or a verdict settles it. Returns the detail's data age either way.
+async fn catalog_item_candidate(
+    services: &Services,
+    owned_index: &CodexIndex,
+    verdicts: &VerdictIndex,
+    tsundoku_id: i32,
+) -> Result<(Option<Candidate>, DateTime<Utc>), SwrError<TsundokuError>> {
+    // The detail call carries the external IDs the anti-join needs; a
+    // candidate that cannot be ownership-checked is never shipped.
+    let detail_hit = services.tsundoku.detail(tsundoku_id).await?;
+    let detail = &detail_hit.value;
+    let external_ids: Vec<ExternalId> = detail
+        .external_ids
+        .iter()
+        .map(|e| e.normalized())
+        .filter(|e| !matches!(e.provider, Provider::Other(_)))
+        .collect();
+
+    // The mandatory per-user, Codex-authoritative anti-join.
+    let owned = external_ids
+        .iter()
+        .any(|e| owned_index.contains_key(&canonical(e)));
+    if owned || verdicts.excludes(&external_ids) {
+        return Ok((None, detail_hit.as_of));
+    }
+    let mut candidate = catalog_candidate(detail, &external_ids);
+    backfill_from_mangabaka(services, &mut candidate).await;
+    Ok((Some(candidate), detail_hit.as_of))
 }
 
 /// What one backlog series resolved to in Tsundoku.
@@ -697,6 +740,11 @@ fn union_strings(a: &[String], b: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+/// Whether the catalog has items beyond `page`.
+fn page_has_more(page: u32, total: i64) -> bool {
+    (i64::from(page) + 1) * i64::from(CATALOG_PAGE_SIZE) < total
 }
 
 fn oldest(current: Option<DateTime<Utc>>, new: DateTime<Utc>) -> Option<DateTime<Utc>> {

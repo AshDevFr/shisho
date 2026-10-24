@@ -28,6 +28,7 @@ serde.workspace = true
 sea-orm.workspace = true
 tokio.workspace = true
 tokio-cron-scheduler.workspace = true
+futures-util.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

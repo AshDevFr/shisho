@@ -578,3 +578,135 @@ fn mangabaka_inert() -> std::sync::Arc<shisho_mangabaka::MangabakaProvider> {
         .expect("inert mangabaka provider"),
     )
 }
+
+#[tokio::test]
+async fn acquirable_details_are_fetched_concurrently() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    let db = fresh_db().await;
+    mount_codex_library(&codex).await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "acquirable_page")),
+        )
+        .mount(&tsundoku)
+        .await;
+    // Each detail takes 300 ms: three in sequence would take 900 ms.
+    for id in [301, 302, 303] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v1/series/{id}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(fixture("tsundoku", &format!("acquirable_detail_{id}")))
+                    .set_delay(std::time::Duration::from_millis(300)),
+            )
+            .mount(&tsundoku)
+            .await;
+    }
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "acquirable_coverage")),
+        )
+        .mount(&tsundoku)
+        .await;
+
+    let services = services(&codex, &tsundoku, db);
+    // Warm the ownership index so only the detail fan-out is timed.
+    services
+        .snapshots
+        .external_index(&user().user_sub, &user().credential)
+        .await
+        .expect("index");
+
+    let started = std::time::Instant::now();
+    let set = get_candidates(&services, &user(), Pool::Acquirable, &Filters::default())
+        .await
+        .expect("acquirable pool");
+    let elapsed = started.elapsed();
+
+    let titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(titles[0], "Top Rated Pick", "catalog order is preserved");
+    assert!(
+        elapsed < std::time::Duration::from_millis(700),
+        "details must be fetched concurrently, took {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn acquirable_pool_walks_past_the_first_catalog_page() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    let db = fresh_db().await;
+    mount_codex_library(&codex).await;
+
+    let item = |id: i64, title: &str| {
+        let mut row = fixture("tsundoku", "acquirable_page")["items"][0].clone();
+        row["id"] = id.into();
+        row["canonicalTitle"] = title.into();
+        row
+    };
+    let detail = |id: i64, title: &str, mangabaka: &str| {
+        let mut row = fixture("tsundoku", "acquirable_detail_301");
+        row["id"] = id.into();
+        row["canonicalTitle"] = title.into();
+        row["externalIds"] = serde_json::json!([
+            { "provider": "mangabaka", "externalId": mangabaka, "fetchedAt": 1765200000 }
+        ]);
+        row
+    };
+    // Two catalog pages: page 0 carries 301 + 302 (owned), page 1 carries 304.
+    let page0 = serde_json::json!({
+        "items": [item(301, "Top Rated Pick"), item(302, "Owned But The Sweep Lies")],
+        "page": 0, "pageSize": 50, "total": 51,
+    });
+    let page1 = serde_json::json!({
+        "items": [item(304, "Second Page Pick")],
+        "page": 1, "pageSize": 50, "total": 51,
+    });
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series"))
+        .and(wiremock::matchers::query_param("page", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(page0))
+        .mount(&tsundoku)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series"))
+        .and(wiremock::matchers::query_param("page", "1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(page1))
+        .mount(&tsundoku)
+        .await;
+    for (id, body) in [
+        (301, detail(301, "Top Rated Pick", "50001")),
+        (302, fixture("tsundoku", "acquirable_detail_302")),
+        (304, detail(304, "Second Page Pick", "50004")),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v1/series/{id}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&tsundoku)
+            .await;
+    }
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "acquirable_coverage")),
+        )
+        .mount(&tsundoku)
+        .await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, db),
+        &user(),
+        Pool::Acquirable,
+        &Filters::default(),
+    )
+    .await
+    .expect("acquirable pool");
+
+    let titles: Vec<&str> = set.candidates.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(titles, vec!["Top Rated Pick", "Second Page Pick"]);
+    assert!(!set.truncated, "the catalog was exhausted");
+}

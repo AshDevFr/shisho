@@ -450,7 +450,14 @@ impl CodexClient {
     ) -> Result<Option<UserSeriesRating>, CodexError> {
         let endpoint = format!("/api/v1/series/{series_id}/rating");
         let req = self.get(&endpoint)?;
-        self.send(Self::authed(req, credential), &endpoint).await
+        // Codex answers `204 No Content` for a series the caller never rated.
+        let resp = self
+            .checked(Self::authed(req, credential), &endpoint)
+            .await?;
+        if resp.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(None);
+        }
+        Self::decode(resp, &endpoint).await
     }
 
     /// `PUT /api/v1/series/{id}/rating` — write the caller's rating/notes
@@ -527,6 +534,17 @@ impl CodexClient {
         req: reqwest::RequestBuilder,
         endpoint: &str,
     ) -> Result<T, CodexError> {
+        let resp = self.checked(req, endpoint).await?;
+        Self::decode(resp, endpoint).await
+    }
+
+    /// Send `req` and turn transport failures and non-2xx statuses into
+    /// errors, leaving the successful response undecoded.
+    async fn checked(
+        &self,
+        req: reqwest::RequestBuilder,
+        endpoint: &str,
+    ) -> Result<reqwest::Response, CodexError> {
         let resp = req.send().await.map_err(|source| CodexError::Transport {
             endpoint: endpoint.to_owned(),
             source,
@@ -546,7 +564,13 @@ impl CodexClient {
                 body,
             });
         }
+        Ok(resp)
+    }
 
+    async fn decode<T: serde::de::DeserializeOwned>(
+        resp: reqwest::Response,
+        endpoint: &str,
+    ) -> Result<T, CodexError> {
         resp.json().await.map_err(|source| CodexError::Decode {
             endpoint: endpoint.to_owned(),
             source,

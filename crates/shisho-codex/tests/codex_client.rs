@@ -225,6 +225,21 @@ async fn rating_read_and_missing_rating_decodes_as_none() {
 }
 
 #[tokio::test]
+async fn unrated_series_answered_with_no_content_is_none() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/unrated/rating"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    let none = client(&server)
+        .series_rating(&api_key(), "unrated")
+        .await
+        .expect("204 is not an error");
+    assert!(none.is_none());
+}
+
+#[tokio::test]
 async fn non_success_statuses_surface_status_and_body() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

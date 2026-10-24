@@ -334,7 +334,7 @@ async fn library_pool(
     // Rank the whole eligible backlog from the snapshot's own genres and tags
     // (no backend calls), then enrich only as far as the requested page.
     // Ties, and every series on a cold start, keep the library's own order.
-    let taste = TasteVector::from_snapshot(&snapshot);
+    let taste = taste_for(services, &snapshot).await;
     let library = by_mangabaka_id(&snapshot);
     let eligible_ids: Vec<i64> = eligible
         .iter()
@@ -344,7 +344,8 @@ async fn library_pool(
     let mut ranked: Vec<(&SnapshotSeries, Option<Score>)> = eligible
         .into_iter()
         .map(|s| {
-            let mut score = (!taste.is_empty()).then(|| taste.score(&s.genres, &s.tags));
+            let mut score = (!taste.is_empty())
+                .then(|| taste.score_with_authors(&s.genres, &s.tags, &s.authors));
             if let Some(series_links) =
                 mangabaka_id(s.external_ids.iter()).and_then(|id| links.get(&id))
             {
@@ -458,7 +459,7 @@ async fn acquirable_pool(
         .map_err(CandidatesError::Codex)?
         .value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
-    let taste = TasteVector::from_snapshot(&snapshot);
+    let taste = taste_for(services, &snapshot).await;
 
     let degraded = |source| CandidatesError::TsundokuDegraded {
         pool: Pool::Acquirable.name(),
@@ -528,7 +529,11 @@ async fn acquirable_pool(
     let mut scored: Vec<(f64, Candidate)> = pool
         .into_iter()
         .map(|mut candidate| {
-            let mut score = Some(taste.score(&candidate.genres, &candidate.tags));
+            let mut score = Some(taste.score_with_authors(
+                &candidate.genres,
+                &candidate.tags,
+                &candidate.authors,
+            ));
             if let Some(series_links) = candidate.mangabaka_id.and_then(|id| links.get(&id)) {
                 apply_franchise(&mut score, series_links, &library);
             }
@@ -660,7 +665,7 @@ async fn discover_pool(
         .map_err(CandidatesError::Codex)?;
     let owned_index = index_hit.value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
-    let taste = TasteVector::from_snapshot(&snapshot_hit.value);
+    let taste = taste_for(services, &snapshot_hit.value).await;
 
     let limit = filters.limit();
     let offset = filters.offset.unwrap_or(0);
@@ -711,7 +716,8 @@ async fn discover_pool(
         {
             continue;
         }
-        let mut score = Some(taste.score(&candidate.genres, &candidate.tags));
+        let mut score =
+            Some(taste.score_with_authors(&candidate.genres, &candidate.tags, &candidate.authors));
         if let Some(series_links) = links.get(&meta.mangabaka_id) {
             apply_franchise(&mut score, series_links, &library);
         }
@@ -774,6 +780,31 @@ async fn discover_pool(
         },
         truncated,
     })
+}
+
+/// The caller's taste, with term specificity from the dump when one is
+/// loaded (rare shared tags count for more than ubiquitous ones).
+async fn taste_for(
+    services: &Services,
+    snapshot: &library_snapshot::LibrarySnapshot,
+) -> TasteVector {
+    let mut taste = TasteVector::from_snapshot(snapshot);
+    if taste.is_empty() {
+        return taste;
+    }
+    match services
+        .metadata
+        .provider()
+        .term_specificity(&taste.term_keys())
+        .await
+    {
+        Ok(Some((counts, corpus))) => taste.apply_specificity(&counts, corpus),
+        Ok(None) => {}
+        Err(err) => {
+            tracing::debug!(error = %err, "term specificity lookup failed; unweighted taste")
+        }
+    }
+    taste
 }
 
 /// Franchise links for the given MangaBaka ids; empty (no adjustment) when

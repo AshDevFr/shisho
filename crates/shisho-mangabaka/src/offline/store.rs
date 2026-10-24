@@ -127,6 +127,34 @@ impl OfflineStore {
         Ok(row.and_then(|r| r.try_get::<Option<i64>>("", "n").ok().flatten()))
     }
 
+    /// [`Self::term_series_count`] for many terms in one query, keyed by the
+    /// lowercased term. Terms no series carries are absent.
+    pub async fn term_series_counts(
+        &self,
+        terms: &[String],
+    ) -> anyhow::Result<HashMap<String, i64>> {
+        let mut out = HashMap::new();
+        if terms.is_empty() || !self.has_table("term_stats").await? {
+            return Ok(out);
+        }
+        let placeholders = vec!["?"; terms.len()].join(", ");
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                format!(
+                    "SELECT lower(term) AS term, SUM(series_count) AS n FROM term_stats \
+                     WHERE term COLLATE NOCASE IN ({placeholders}) GROUP BY lower(term)"
+                ),
+                terms.iter().map(|t| t.clone().into()),
+            ))
+            .await?;
+        for row in rows {
+            out.insert(row.try_get("", "term")?, row.try_get("", "n")?);
+        }
+        Ok(out)
+    }
+
     /// Active series in the dump: the corpus size for term specificity.
     pub async fn active_series_count(&self) -> anyhow::Result<u64> {
         self.count_active_rows().await

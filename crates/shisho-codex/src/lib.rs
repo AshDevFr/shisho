@@ -152,11 +152,22 @@ impl FullSeries {
 pub struct SeriesMetadata {
     pub title: String,
     pub summary: Option<String>,
+    /// Credited people (writers, artists, ...).
+    #[serde(default)]
+    pub authors: Vec<SeriesAuthor>,
     pub status: Option<String>,
     pub year: Option<i32>,
     pub publisher: Option<String>,
     pub total_volume_count: Option<i32>,
     pub total_chapter_count: Option<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesAuthor {
+    pub name: String,
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -69,6 +69,7 @@ struct Source {
     weight: f64,
     /// Lowercased genre and tag keys.
     terms: Vec<String>,
+    authors: Vec<String>,
 }
 
 /// The caller's taste, folded from their library.
@@ -100,6 +101,7 @@ impl TasteVector {
                     rating: s.rating,
                     weight,
                     terms: term_keys(&s.genres, &s.tags),
+                    authors: s.authors.clone(),
                 })
             })
             .collect();
@@ -143,7 +145,76 @@ impl TasteVector {
         liked
     }
 
+    /// Every term the taste carries a weight for (lowercased).
+    pub fn term_keys(&self) -> Vec<String> {
+        self.terms.keys().cloned().collect()
+    }
+
+    /// Weigh terms by how specific they are: a term most series carry
+    /// ("Shounen") says little, a rare one ("Elf Protagonist") a lot. Each
+    /// weight is scaled by `ln(corpus / series_count)` relative to a term
+    /// carried by one series in a hundred, clamped to [0.5, 2]. `counts` maps
+    /// lowercased terms to how many corpus series carry them; terms missing
+    /// from it keep their weight.
+    pub fn apply_specificity(&mut self, counts: &HashMap<String, i64>, corpus: u64) {
+        if corpus == 0 {
+            return;
+        }
+        for (term, weight) in &mut self.terms {
+            if let Some(&count) = counts.get(term)
+                && count > 0
+            {
+                let idf = (corpus as f64 / count as f64).ln();
+                *weight *= (idf / REFERENCE_IDF).clamp(MIN_SPECIFICITY, MAX_SPECIFICITY);
+            }
+        }
+    }
+
     pub fn score(&self, genres: &[String], tags: &[String]) -> Score {
+        self.score_with_authors(genres, tags, &[])
+    }
+
+    /// [`Self::score`], plus a boost (and a "same author as" anchor) when the
+    /// candidate shares an author with a series the caller clearly liked.
+    pub fn score_with_authors(
+        &self,
+        genres: &[String],
+        tags: &[String],
+        authors: &[String],
+    ) -> Score {
+        let mut score = self.term_score(genres, tags);
+        if let Some((source, author)) = self.shared_author(authors) {
+            score.affinity += AUTHOR_BOOST;
+            score.anchors.insert(
+                0,
+                Anchor {
+                    title: source.title.clone(),
+                    codex_series_id: source.codex_series_id.clone(),
+                    your_rating: source.rating,
+                    shared: vec![author],
+                    relation: Some("same author as".to_owned()),
+                },
+            );
+            score.anchors.truncate(MAX_ANCHORS + 1);
+        }
+        score
+    }
+
+    /// The best-liked series sharing an author with the candidate.
+    fn shared_author(&self, authors: &[String]) -> Option<(&Source, String)> {
+        self.sources
+            .iter()
+            .filter(|s| s.weight >= AUTHOR_MIN_WEIGHT)
+            .filter_map(|source| {
+                let author = authors
+                    .iter()
+                    .find(|a| source.authors.iter().any(|b| b.eq_ignore_ascii_case(a)))?;
+                Some((source, author.clone()))
+            })
+            .max_by(|a, b| a.0.weight.total_cmp(&b.0.weight))
+    }
+
+    fn term_score(&self, genres: &[String], tags: &[String]) -> Score {
         let weighted = genres
             .iter()
             .map(|g| (g, 1.0))
@@ -207,6 +278,16 @@ impl TasteVector {
             .collect()
     }
 }
+
+/// A term carried by one series in a hundred keeps its weight under
+/// [`TasteVector::apply_specificity`]; rarer terms gain, commoner ones lose.
+const REFERENCE_IDF: f64 = 4.605_170_185_988_091; // ln(100)
+const MIN_SPECIFICITY: f64 = 0.5;
+const MAX_SPECIFICITY: f64 = 2.0;
+/// Score boost for sharing an author with a clearly liked series.
+const AUTHOR_BOOST: f64 = 0.5;
+/// How strongly a series must be liked for its authors to count.
+const AUTHOR_MIN_WEIGHT: f64 = 0.5;
 
 /// Score shift for a sequel or side story of a series the caller finished and
 /// did not dislike: the highest-precision recommendation there is.
@@ -305,7 +386,11 @@ impl crate::eval::Ranker for AffinityRanker {
         let taste = TasteVector::from_snapshot(snapshot);
         let scores: Vec<f64> = backlog
             .iter()
-            .map(|s| taste.score(&s.genres, &s.tags).affinity)
+            .map(|s| {
+                taste
+                    .score_with_authors(&s.genres, &s.tags, &s.authors)
+                    .affinity
+            })
             .collect();
         let mut order: Vec<usize> = (0..backlog.len()).collect();
         // Stable: ties keep the library's own order.
@@ -335,6 +420,7 @@ mod tests {
             year: None,
             genres: genres.iter().map(|s| (*s).to_owned()).collect(),
             tags: tags.iter().map(|s| (*s).to_owned()).collect(),
+            authors: Vec::new(),
             book_count: 5,
             unread_count: Some(if state == ReadState::Completed { 0 } else { 5 }),
             read_state: state,
@@ -467,6 +553,39 @@ mod tests {
         let (shift, _) =
             franchise_adjustment(&[("sequel".into(), 5), ("spin_off".into(), 6)], &library);
         assert_eq!(shift, 0.0);
+    }
+
+    #[test]
+    fn affinity_idf_rare_shared_tag_outweighs_a_common_one() {
+        let mut taste = TasteVector::from_snapshot(&LibrarySnapshot::from_series(vec![series(
+            "fav",
+            &[],
+            &["Elf Protagonist", "Shounen"],
+            ReadState::Completed,
+            Some(90),
+        )]));
+        let counts = HashMap::from([
+            ("elf protagonist".to_owned(), 50_i64),
+            ("shounen".to_owned(), 50_000_i64),
+        ]);
+        taste.apply_specificity(&counts, 300_000);
+        let rare = taste.score(&[], &strings(&["Elf Protagonist"]));
+        let common = taste.score(&[], &strings(&["Shounen"]));
+        assert!(rare.affinity > common.affinity, "{rare:?} vs {common:?}");
+    }
+
+    #[test]
+    fn affinity_author_shared_with_a_favourite_boosts_and_anchors() {
+        let mut fav = series("fav", &["Fantasy"], &[], ReadState::Completed, Some(90));
+        fav.authors = vec!["Kanehito Yamada".into()];
+        let taste = TasteVector::from_snapshot(&LibrarySnapshot::from_series(vec![fav]));
+        let with =
+            taste.score_with_authors(&strings(&["Romance"]), &[], &strings(&["kanehito yamada"]));
+        let without = taste.score(&strings(&["Romance"]), &[]);
+        assert!(with.affinity > without.affinity);
+        let anchor = &with.anchors[0];
+        assert_eq!(anchor.relation.as_deref(), Some("same author as"));
+        assert_eq!(anchor.shared, strings(&["kanehito yamada"]));
     }
 
     #[test]

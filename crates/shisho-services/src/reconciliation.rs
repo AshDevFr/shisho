@@ -139,6 +139,7 @@ mod tests {
             year: None,
             genres: Vec::new(),
             tags: Vec::new(),
+            authors: Vec::new(),
             book_count: 10,
             unread_count: Some(10),
             read_state,

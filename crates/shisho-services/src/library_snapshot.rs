@@ -50,6 +50,9 @@ pub struct SnapshotSeries {
     pub year: Option<i32>,
     pub genres: Vec<String>,
     pub tags: Vec<String>,
+    /// Credited people, deduplicated (a writer-artist appears once).
+    #[serde(default)]
+    pub authors: Vec<String>,
     pub book_count: i64,
     pub unread_count: Option<i64>,
     pub read_state: ReadState,
@@ -360,6 +363,15 @@ async fn build(
             id: row.id,
             library_id: row.library_id,
             library_name: row.library_name,
+            authors: {
+                let mut names: Vec<String> = Vec::new();
+                for author in &row.metadata.authors {
+                    if !names.contains(&author.name) {
+                        names.push(author.name.clone());
+                    }
+                }
+                names
+            },
             title: row.metadata.title,
             summary: row.metadata.summary,
             status: row.metadata.status,

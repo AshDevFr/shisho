@@ -150,6 +150,7 @@ mod tests {
             year: None,
             genres: Vec::new(),
             tags: Vec::new(),
+            authors: Vec::new(),
             book_count: 5,
             unread_count: Some(if state == ReadState::Completed { 0 } else { 5 }),
             read_state: state,

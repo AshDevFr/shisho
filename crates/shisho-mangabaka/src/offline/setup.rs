@@ -257,6 +257,13 @@ mod tests {
         // Frieren and its sequel both carry Elves.
         assert_eq!(store.term_series_count("elves").await.unwrap(), Some(2));
         assert_eq!(store.term_series_count("No Such Term").await.unwrap(), None);
+        let counts = store
+            .term_series_counts(&["elves".into(), "FANTASY".into(), "nope".into()])
+            .await
+            .unwrap();
+        assert_eq!(counts.get("elves"), Some(&2));
+        assert!(counts.get("fantasy").is_some_and(|&n| n >= 3));
+        assert!(!counts.contains_key("nope"));
         assert!(store.active_series_count().await.unwrap() >= 7);
     }
 

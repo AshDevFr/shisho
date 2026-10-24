@@ -296,6 +296,26 @@ impl MangabakaProvider {
             .map_err(MangabakaError::Store)
     }
 
+    /// How many dump series carry each term, and the dump's active-series
+    /// count, for term specificity. `None` without a dump.
+    pub async fn term_specificity(
+        &self,
+        terms: &[String],
+    ) -> Result<Option<(std::collections::HashMap<String, i64>, u64)>, MangabakaError> {
+        let Some(store) = self.current_store().await else {
+            return Ok(None);
+        };
+        let counts = store
+            .term_series_counts(terms)
+            .await
+            .map_err(MangabakaError::Store)?;
+        let corpus = store
+            .active_series_count()
+            .await
+            .map_err(MangabakaError::Store)?;
+        Ok(Some((counts, corpus)))
+    }
+
     pub async fn offline_loaded(&self) -> bool {
         self.offline.read().await.is_some()
     }

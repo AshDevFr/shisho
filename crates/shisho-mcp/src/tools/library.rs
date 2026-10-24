@@ -14,11 +14,6 @@ use shisho_codex::CodexError;
 use shisho_services::library::{self, LibraryError, LibraryQuery, LibrarySeries, LibrarySort};
 use shisho_services::read_state::ReadState;
 
-/// Matches the service's own clamp; at the cap, truncation cannot be detected
-/// (the +1 probe row would exceed it).
-const DEFAULT_LIMIT: usize = 50;
-const MAX_LIMIT: usize = 200;
-
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchLibraryParams {
@@ -41,6 +36,9 @@ pub struct SearchLibraryParams {
     /// Default 50, capped at 200.
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Matches to skip, for the next page when 'truncated' is true.
+    #[serde(default)]
+    pub offset: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,7 +59,9 @@ struct LibraryInfo {
 #[serde(rename_all = "camelCase")]
 struct LibrarySearchResult {
     series: Vec<LibrarySeries>,
-    /// More series matched than were returned.
+    /// Every series matching the query, across all pages.
+    total: usize,
+    /// More series match beyond this page; page on with 'offset'.
     truncated: bool,
     /// Age of the library snapshot the results came from.
     as_of: DateTime<Utc>,
@@ -104,7 +104,7 @@ impl McpService {
     #[tool(
         name = "search_library",
         annotations(read_only_hint = true, open_world_hint = true),
-        description = "Search the caller's own Codex library by title/author text, genre, and read state. Answers questions like 'did I read anything by this author?' or 'what fantasy series am I mid-way through?'. Each series carries the caller's own Codex rating (1-100) and rating notes when set; sort='rating' with state='completed' returns the caller's top shelf, the ground truth for taste. Pure library view: results are the caller's own series only."
+        description = "Search the caller's own Codex library by title/author text, genre, and read state. Answers questions like 'did I read anything by this author?' or 'what fantasy series am I mid-way through?'. Each series carries the caller's own Codex rating (1-100) and rating notes when set; sort='rating' with state='completed' returns the caller's top shelf, the ground truth for taste. Pure library view: results are the caller's own series only. 'total' counts every match; when 'truncated' is true, page on with 'offset'."
     )]
     async fn search_library(
         &self,
@@ -113,41 +113,26 @@ impl McpService {
     ) -> Result<CallToolResult, ErrorData> {
         let user = self.user_ctx(&auth).await?;
         let services = self.services()?;
-        let limit = params.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-
-        // Ask for one extra row purely to detect server-side truncation.
+        let offset = params.offset.unwrap_or(0);
         let query = LibraryQuery {
             text: params.text,
             genre: params.genre,
             state: params.state,
             libraries: params.libraries,
             sort: params.sort,
-            limit: Some((limit + 1).min(MAX_LIMIT)),
+            limit: params.limit,
+            offset: Some(offset),
         };
-        let mut series = match library::search_library(services, &user, &query).await {
-            Ok(series) => series,
+        let page = match library::search_library(services, &user, &query).await {
+            Ok(page) => page,
             Err(err) => return Ok(map_error(&err)),
-        };
-        let truncated = series.len() > limit;
-        series.truncate(limit);
-
-        // Cache hit: the search above just built/refreshed this snapshot.
-        let as_of = match services
-            .snapshots
-            .get(&user.user_sub, &user.credential)
-            .await
-        {
-            Ok(hit) => hit.as_of,
-            Err(err) if swr_codex_unauthorized(&err) => {
-                return Ok(tool_error(CODEX_KEY_REVOKED));
-            }
-            Err(err) => return Ok(tool_error(format!("library snapshot unavailable: {err}"))),
         };
 
         tool_json(&LibrarySearchResult {
-            series,
-            truncated,
-            as_of,
+            truncated: offset + page.series.len() < page.total,
+            total: page.total,
+            series: page.series,
+            as_of: page.as_of,
         })
     }
 }

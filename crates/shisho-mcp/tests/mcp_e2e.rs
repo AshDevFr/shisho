@@ -180,3 +180,40 @@ async fn get_candidates_library_pool_returns_the_untouched_backlog() {
 
     client.cancel().await.unwrap();
 }
+
+#[tokio::test]
+async fn search_library_flags_a_partial_page_and_pages_on_with_offset() {
+    let codex = MockServer::start().await;
+    mount_codex(&codex).await;
+    let (client, _state) = connect(&codex).await;
+
+    let search = |args: serde_json::Value| {
+        let client = &client;
+        async move {
+            let result = client
+                .call_tool(
+                    CallToolRequestParams::new("search_library")
+                        .with_arguments(args.as_object().cloned().unwrap()),
+                )
+                .await
+                .expect("search_library call");
+            assert_ne!(result.is_error, Some(true), "{result:?}");
+            result.structured_content.expect("structured content")
+        }
+    };
+
+    let first = search(serde_json::json!({ "limit": 1 })).await;
+    let total = first["total"].as_u64().expect("total");
+    assert!(
+        total > 1,
+        "the fixture library holds several series: {first}"
+    );
+    assert_eq!(first["series"].as_array().unwrap().len(), 1);
+    assert_eq!(first["truncated"], true);
+
+    let last = search(serde_json::json!({ "limit": 1, "offset": total - 1 })).await;
+    assert_eq!(last["series"].as_array().unwrap().len(), 1);
+    assert_eq!(last["truncated"], false);
+
+    client.cancel().await.unwrap();
+}

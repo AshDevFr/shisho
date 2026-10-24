@@ -75,13 +75,13 @@ async fn text_query_uses_codex_server_side_search() {
     .await
     .expect("text search");
 
-    let titles: Vec<&str> = results.iter().map(|s| s.title.as_str()).collect();
+    let titles: Vec<&str> = results.series.iter().map(|s| s.title.as_str()).collect();
     assert_eq!(titles, vec!["Sousou no Frieren", "Already Read"]);
     // Snapshot data is merged in: read state, genres, external IDs.
-    assert_eq!(results[0].read_state, ReadState::Untouched);
-    assert_eq!(results[0].genres, vec!["Fantasy"]);
+    assert_eq!(results.series[0].read_state, ReadState::Untouched);
+    assert_eq!(results.series[0].genres, vec!["Fantasy"]);
     assert!(
-        results[0]
+        results.series[0]
             .external_ids
             .contains(&"mangabaka:112092".to_owned())
     );
@@ -103,7 +103,7 @@ async fn genre_query_filters_from_the_snapshot() {
     .await
     .expect("genre search");
 
-    let titles: Vec<&str> = results.iter().map(|s| s.title.as_str()).collect();
+    let titles: Vec<&str> = results.series.iter().map(|s| s.title.as_str()).collect();
     assert_eq!(
         titles,
         vec!["Obscure Title"],
@@ -127,7 +127,7 @@ async fn state_query_returns_the_read_state_slice() {
     .await
     .expect("state search");
 
-    let titles: Vec<&str> = results.iter().map(|s| s.title.as_str()).collect();
+    let titles: Vec<&str> = results.series.iter().map(|s| s.title.as_str()).collect();
     assert_eq!(titles, vec!["Already Read"]);
 }
 
@@ -150,7 +150,7 @@ async fn state_filter_composes_with_text_queries() {
     .await
     .expect("composed search");
 
-    let titles: Vec<&str> = results.iter().map(|s| s.title.as_str()).collect();
+    let titles: Vec<&str> = results.series.iter().map(|s| s.title.as_str()).collect();
     assert_eq!(titles, vec!["Sousou no Frieren"]);
 }
 
@@ -203,6 +203,7 @@ async fn rating_sort_puts_the_top_shelf_first() {
     .expect("rating sort");
 
     let ranked: Vec<(&str, Option<i32>)> = results
+        .series
         .iter()
         .map(|s| (s.title.as_str(), s.rating))
         .collect();
@@ -216,4 +217,39 @@ fn library_sort_schema_is_a_flat_inline_string_enum() {
     let schema = serde_json::to_value(schemars::schema_for!(LibrarySort)).unwrap();
     assert!(schema.get("oneOf").is_none(), "no oneOf: {schema}");
     assert_eq!(schema["type"], "string");
+}
+
+#[tokio::test]
+async fn a_page_reports_the_full_match_count_and_pages_with_offset() {
+    let codex = MockServer::start().await;
+    mount_codex(&codex).await;
+    let services = services(&codex).await;
+
+    let first = search_library(
+        &services,
+        &user(),
+        &LibraryQuery {
+            limit: Some(4),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("first page");
+    assert_eq!(first.total, 6);
+    assert_eq!(first.series.len(), 4);
+
+    let rest = search_library(
+        &services,
+        &user(),
+        &LibraryQuery {
+            limit: Some(4),
+            offset: Some(4),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("second page");
+    assert_eq!(rest.total, 6);
+    let titles: Vec<&str> = rest.series.iter().map(|s| s.title.as_str()).collect();
+    assert_eq!(titles, vec!["Already Read", "Verdicted By MangaBaka Id"]);
 }

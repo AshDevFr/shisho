@@ -6,6 +6,7 @@
 //! compose on top from the snapshot, which already carries both. Tsundoku
 //! is deliberately not involved: this is a pure library view.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::library_snapshot;
@@ -33,6 +34,19 @@ pub struct LibraryQuery {
     pub sort: Option<LibrarySort>,
     /// Default 50, capped at 200.
     pub limit: Option<usize>,
+    /// Matches to skip before the page starts (default 0).
+    pub offset: Option<usize>,
+}
+
+/// One page of matches, with the full match count so callers can tell a
+/// partial page from the whole answer.
+#[derive(Debug, Clone)]
+pub struct LibraryPage {
+    pub series: Vec<LibrarySeries>,
+    /// Every series matching the query, across all pages.
+    pub total: usize,
+    /// Age of the library snapshot the page came from.
+    pub as_of: DateTime<Utc>,
 }
 
 /// Result order for `search_library`.
@@ -98,13 +112,13 @@ pub async fn search_library(
     services: &Services,
     user: &UserCtx,
     query: &LibraryQuery,
-) -> Result<Vec<LibrarySeries>, LibraryError> {
-    let snapshot = services
+) -> Result<LibraryPage, LibraryError> {
+    let hit = services
         .snapshots
         .get(&user.user_sub, &user.credential)
         .await
-        .map_err(LibraryError::Snapshot)?
-        .value;
+        .map_err(LibraryError::Snapshot)?;
+    let snapshot = hit.value;
 
     if !query.libraries.is_empty() {
         let unmatched = library_snapshot::unmatched_selectors(&snapshot, &query.libraries);
@@ -161,8 +175,10 @@ pub async fn search_library(
         Some(LibrarySort::Title) => matched.sort_by_key(|s| s.title.to_lowercase()),
         None => {}
     }
-    let results = matched
+    let total = matched.len();
+    let series = matched
         .into_iter()
+        .skip(query.offset.unwrap_or(0))
         .take(limit)
         .map(|s| LibrarySeries {
             id: s.id.clone(),
@@ -185,5 +201,9 @@ pub async fn search_library(
         })
         .collect();
 
-    Ok(results)
+    Ok(LibraryPage {
+        series,
+        total,
+        as_of: hit.as_of,
+    })
 }

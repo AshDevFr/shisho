@@ -1463,3 +1463,51 @@ async fn library_pool_skips_rated_series_and_copies_of_read_ones() {
     titles.sort_unstable();
     assert_eq!(titles, vec!["Double Chapters", "Plain Unread"]);
 }
+
+#[tokio::test]
+async fn a_candidate_never_cites_itself_as_a_reason() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    // Two copies of one title that Codex never linked by external id.
+    let rows = vec![
+        codex_copy("s1", "Chillin'", "1", 10, 0),
+        codex_copy("s2", "Chillin'", "2", 40, 40),
+        codex_copy("s3", "Other Fantasy", "3", 8, 0),
+    ];
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": rows, "page": 1, "pageSize": 100, "total": 3, "totalPages": 1
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ratings": [
+                { "id": "r1", "seriesId": "s1", "rating": 95, "notes": null },
+                { "id": "r3", "seriesId": "s3", "rating": 85, "notes": null },
+            ]})),
+        )
+        .mount(&codex)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/series/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("tsundoku", "feed_empty")))
+        .mount(&tsundoku)
+        .await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, fresh_db().await),
+        &user(),
+        Pool::Library,
+        &Filters::default(),
+    )
+    .await
+    .expect("library pool");
+
+    let candidate = &set.candidates[0];
+    assert_eq!(candidate.title, "Chillin'");
+    let cited: Vec<&str> = candidate.because.iter().map(|a| a.title.as_str()).collect();
+    assert_eq!(cited, vec!["Other Fantasy"]);
+}

@@ -1276,6 +1276,14 @@ fn explain(candidate: &mut Candidate, taste: &TasteVector) {
             candidate.because.push(anchor);
         }
     }
+    // A series is no reason for itself. Matching on title as well as on the
+    // Codex id also drops a second copy that Codex never linked by external
+    // id, which shares every genre, tag and author with the candidate.
+    let (own_id, own_title) = (&candidate.codex_series_id, &candidate.title);
+    candidate.because.retain(|a| {
+        !(own_id.is_some() && a.codex_series_id == *own_id)
+            && !a.title.trim().eq_ignore_ascii_case(own_title.trim())
+    });
     candidate.because.truncate(MAX_BECAUSE);
 }
 

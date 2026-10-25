@@ -132,7 +132,9 @@ async fn reconcile_sweep_detects_and_then_resolves() {
         .await
         .expect("snapshot build");
 
-    let report = sweeps::run_reconcile_sweep(&services).await.expect("sweep");
+    let report = sweeps::run_reconcile_sweep(&services, None)
+        .await
+        .expect("sweep");
     assert_eq!(report.users, 1);
     assert_eq!(report.with_snapshot, 1);
     // Lazy hook and sweep may race for the same flag; the lifecycle
@@ -159,7 +161,9 @@ async fn reconcile_sweep_detects_and_then_resolves() {
     .await
     .expect("insert outcome");
 
-    let report = sweeps::run_reconcile_sweep(&services).await.expect("sweep");
+    let report = sweeps::run_reconcile_sweep(&services, None)
+        .await
+        .expect("sweep");
     assert_eq!(report.resolved, 1);
     assert_eq!(report.flagged, 0);
     assert_eq!(
@@ -217,10 +221,15 @@ async fn scheduler_fires_jobs_on_a_short_interval() {
     let db = fresh_db().await;
     let services = services("", db);
 
-    let _scheduler =
-        sweeps::spawn_scheduler(services.clone(), "*/1 * * * * *", "*/1 * * * * *", None)
-            .await
-            .expect("scheduler");
+    let _scheduler = sweeps::spawn_scheduler(
+        services.clone(),
+        None,
+        "*/1 * * * * *",
+        "*/1 * * * * *",
+        None,
+    )
+    .await
+    .expect("scheduler");
 
     for _ in 0..60 {
         if services.sweeps.reconcile_last_run().is_some()
@@ -263,6 +272,7 @@ async fn scheduler_fires_the_mangabaka_refresh() {
 
     let _scheduler = sweeps::spawn_scheduler(
         services,
+        None,
         "0 0 6 * * Mon",
         "0 30 5 * * *",
         Some("*/1 * * * * *"),

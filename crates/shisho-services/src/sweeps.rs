@@ -2,11 +2,13 @@
 //! (weekly) and the unresolvable-series scan (daily), scheduled inside
 //! `serve` with `tokio-cron-scheduler`.
 //!
-//! "Per known user" means users with rows in Shisho's own tables; sweeps
-//! read the cached library snapshots only ([`peek`] — no credential, no
-//! rebuild), because Shisho can never originate a per-user Codex call.
-//! A user without a warm snapshot is skipped here and reconciles lazily on
-//! their next authenticated touch (the snapshot build hook).
+//! "Per known user" means users with rows in Shisho's own tables. Given
+//! [`StoredKeys`], the reconcile sweep re-reads each such user's library
+//! with the Codex key Shisho minted for them and runs the full per-user pass
+//! (including the stalled-read check). Without them, or for a user whose key
+//! is missing or refused, it falls back to the cached snapshot ([`peek`]),
+//! which can only raise flags a warm snapshot shows and close settled ones.
+//! The unresolvable scan always reads cached snapshots only.
 //!
 //! Results live in memory ([`SweepStatus`]) plus the reconciliation flags
 //! in the database; a restart costs nothing but the last-run timestamps.
@@ -19,9 +21,20 @@ use std::sync::{Arc, RwLock};
 use chrono::{DateTime, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 
-use crate::Services;
+use crate::codex_identity::{CodexIdentity, IdentityError};
 use crate::reconciliation;
+use crate::{PassError, Services};
+use shisho_db::Dek;
 use shisho_db::repos::users;
+
+/// What the reconcile sweep needs to read a user's library on their behalf:
+/// the identity resolver (decrypts and validates their stored Codex key) and
+/// the data key the stored keys are sealed with.
+#[derive(Clone)]
+pub struct StoredKeys {
+    pub identity: Arc<CodexIdentity>,
+    pub dek: Dek,
+}
 
 /// One user's unresolvable-series tally from the last scan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +84,13 @@ impl SweepStatus {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReconcileSweepReport {
     pub users: usize,
-    /// Users with a warm snapshot (detection ran, not just resolution).
+    /// Users whose library was re-read with their stored key (full pass).
+    pub refreshed: usize,
+    /// Users the sweep had keys for but could not refresh (no stored key,
+    /// key refused, Codex failure); they got the cached-snapshot pass.
+    pub skipped: usize,
+    /// Users given the cached-snapshot pass that had a warm snapshot
+    /// (detection ran, not just resolution).
     pub with_snapshot: usize,
     pub flagged: usize,
     pub resolved: usize,
@@ -88,10 +107,12 @@ pub struct UnresolvableSweepReport {
     pub unresolvable: usize,
 }
 
-/// The outcome-reconciliation sweep: per known user, resolve settled
-/// flags and (when a warm snapshot exists) detect new ones.
+/// The outcome-reconciliation sweep: per known user, the full pass with
+/// their stored key when `keys` is given, else (or when that fails) the
+/// cached-snapshot pass.
 pub async fn run_reconcile_sweep(
     services: &Services,
+    keys: Option<&StoredKeys>,
 ) -> Result<ReconcileSweepReport, sea_orm::DbErr> {
     let users = users::known_user_subs(&services.db).await?;
     let mut report = ReconcileSweepReport {
@@ -99,16 +120,30 @@ pub async fn run_reconcile_sweep(
         ..Default::default()
     };
     for user_sub in &users {
+        if let Some(keys) = keys {
+            match refresh_user(services, keys, user_sub).await {
+                Ok(outcome) => {
+                    report.refreshed += 1;
+                    report.flagged += outcome.flagged;
+                    report.resolved += outcome.resolved;
+                    report.inferred += outcome.inferred;
+                    continue;
+                }
+                Err(err) => {
+                    tracing::warn!(user_sub, error = %err, "reconcile sweep could not refresh this user; using the cached snapshot");
+                    report.skipped += 1;
+                }
+            }
+        }
         let snapshot = services.snapshots.peek(user_sub);
         if snapshot.is_some() {
             report.with_snapshot += 1;
         }
+        let _guard = services.passes.lock(user_sub).await;
         let outcome = reconciliation::reconcile_user(
             &services.db,
             user_sub,
             snapshot.as_ref().map(|hit| hit.value.as_ref()),
-            // No credential here: stall checks run on the user's own
-            // snapshot builds, which carry one.
             None,
         )
         .await?;
@@ -124,6 +159,8 @@ pub async fn run_reconcile_sweep(
         .expect("sweep lock") = Some(Utc::now());
     tracing::info!(
         users = report.users,
+        refreshed = report.refreshed,
+        skipped = report.skipped,
         with_snapshot = report.with_snapshot,
         flagged = report.flagged,
         resolved = report.resolved,
@@ -131,6 +168,43 @@ pub async fn run_reconcile_sweep(
         "reconcile sweep complete"
     );
     Ok(report)
+}
+
+/// Why the sweep could not run the full pass for one user.
+#[derive(Debug, thiserror::Error)]
+enum RefreshError {
+    #[error("no account is linked to this Codex user")]
+    NoAccount,
+    #[error("the account is deactivated")]
+    Deactivated,
+    #[error(transparent)]
+    Identity(#[from] IdentityError),
+    #[error(transparent)]
+    Pass(#[from] PassError),
+    #[error(transparent)]
+    Db(#[from] sea_orm::DbErr),
+}
+
+/// Resolve `user_sub`'s stored key and run the full pass with it.
+async fn refresh_user(
+    services: &Services,
+    keys: &StoredKeys,
+    user_sub: &str,
+) -> Result<reconciliation::ReconcileOutcome, RefreshError> {
+    let account = users::find_by_codex_user_sub(&services.db, user_sub)
+        .await?
+        .ok_or(RefreshError::NoAccount)?;
+    if account.deactivated_at.is_some() {
+        return Err(RefreshError::Deactivated);
+    }
+    let ctx = keys
+        .identity
+        .resolve(&services.db, &keys.dek, &account.id)
+        .await?;
+    let (_, outcome) = services
+        .reconcile_now(&ctx.user_sub, &ctx.credential)
+        .await?;
+    Ok(outcome.reconcile)
 }
 
 /// The unresolvable-series scan: per known user with a warm snapshot,
@@ -187,6 +261,7 @@ pub async fn run_unresolvable_sweep(
 /// here, at startup, never silently at fire time.
 pub async fn spawn_scheduler(
     services: Services,
+    keys: Option<StoredKeys>,
     reconcile_cron: &str,
     unresolvable_cron: &str,
     mangabaka_refresh_cron: Option<&str>,
@@ -197,8 +272,9 @@ pub async fn spawn_scheduler(
     scheduler
         .add(Job::new_async(reconcile_cron, move |_uuid, _lock| {
             let services = svc.clone();
+            let keys = keys.clone();
             Box::pin(async move {
-                if let Err(err) = run_reconcile_sweep(&services).await {
+                if let Err(err) = run_reconcile_sweep(&services, keys.as_ref()).await {
                     tracing::warn!(error = %err, "reconcile sweep failed");
                 }
             })

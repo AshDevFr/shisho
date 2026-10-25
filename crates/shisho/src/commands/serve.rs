@@ -44,6 +44,15 @@ struct BackgroundJobs {
     _feed_poller: Option<tokio::task::JoinHandle<()>>,
 }
 
+/// The stored-key access the reconcile sweep needs, when this instance can
+/// read users' stored Codex keys (encryption on, Codex configured).
+fn stored_keys(state: &AppState) -> Option<shisho_services::sweeps::StoredKeys> {
+    Some(shisho_services::sweeps::StoredKeys {
+        identity: state.codex_identity.clone()?,
+        dek: state.dek.clone()?,
+    })
+}
+
 /// Register the periodic domain jobs and trigger a boot-time MangaBaka refresh
 /// when the dump is missing or stale. A no-op when the recommendation service is
 /// not configured (no `codex.base_url`). Never propagates an error: a job that
@@ -59,8 +68,15 @@ async fn start_background_jobs(state: &AppState) -> BackgroundJobs {
 
     boot_refresh_if_stale(services, &state.cfg).await;
 
+    let keys = stored_keys(state);
+    if state.cfg.sweeps.reconcile_refresh && keys.is_none() {
+        tracing::info!(
+            "the reconcile sweep reads cached snapshots only: stored Codex keys need [encryption]"
+        );
+    }
     let scheduler = match shisho_services::sweeps::spawn_scheduler(
         services.clone(),
+        keys.filter(|_| state.cfg.sweeps.reconcile_refresh),
         &state.cfg.sweeps.reconcile_cron,
         &state.cfg.sweeps.unresolvable_cron,
         state.cfg.mangabaka.offline_refresh_cron.as_deref(),

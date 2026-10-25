@@ -161,5 +161,10 @@ tsundoku_ttl_secs = 300
 # In-process housekeeping schedules (seconds-first cron form).
 # Outcome-reconciliation sweep (weekly).
 reconcile_cron = "0 0 6 * * Mon"
+# Re-read each known user's library with their stored Codex key on every
+# reconcile sweep, so stalled reads and new ratings are recorded even for
+# users who have not used Shisho since. One library fetch per user per run.
+# false: only users with a cached snapshot are checked, without the stall check.
+reconcile_refresh = true
 # Unresolvable-series scan (daily).
 unresolvable_cron = "0 30 5 * * *"

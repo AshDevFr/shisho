@@ -18,6 +18,7 @@ pub mod reconciliation;
 pub mod sweeps;
 pub mod tsundoku_cache;
 pub mod tuning;
+pub mod user_pass;
 pub mod verdict_views;
 pub mod verdicts;
 
@@ -54,6 +55,8 @@ pub struct Services {
     /// `tsundoku.owned_prefilter` from config: opt-in `owned=false`
     /// bandwidth pre-filter on acquirable-pool queries.
     pub tsundoku_owned_prefilter: bool,
+    /// Serializes the full per-user pass across its triggers.
+    pub passes: user_pass::PassLocks,
 }
 
 impl Services {
@@ -66,12 +69,15 @@ impl Services {
         tsundoku_owned_prefilter: bool,
     ) -> Self {
         // Lazy reconciliation: every snapshot build (the user's next
-        // authenticated touch) re-runs flag detection for that user, so
-        // users without warm snapshots at sweep time still reconcile.
+        // authenticated touch) runs the full pass for that user, so users
+        // without warm snapshots at sweep time still reconcile.
+        let passes = user_pass::PassLocks::default();
         let hook_db = db.clone();
+        let hook_passes = passes.clone();
         let build_hook: library_snapshot::SnapshotBuildHook = std::sync::Arc::new(
             move |user_sub: &str, codex: &CodexClient, credential: &CodexCredential, snapshot| {
                 let db = hook_db.clone();
+                let passes = hook_passes.clone();
                 let user_sub = user_sub.to_owned();
                 let codex = codex.clone();
                 let credential = credential.clone();
@@ -81,41 +87,11 @@ impl Services {
                         client: &codex,
                         credential: &credential,
                     };
-                    match reconciliation::reconcile_user(
-                        &db,
-                        &user_sub,
-                        Some(&snapshot),
-                        Some(access),
-                    )
-                    .await
-                    {
-                        Ok(outcome)
-                            if outcome.flagged > 0
-                                || outcome.resolved > 0
-                                || outcome.inferred > 0 =>
-                        {
-                            tracing::info!(
-                                user_sub,
-                                flagged = outcome.flagged,
-                                resolved = outcome.resolved,
-                                inferred = outcome.inferred,
-                                "lazy reconciliation on snapshot build"
-                            );
-                        }
-                        Ok(_) => {}
+                    match user_pass::run(&db, &passes, &user_sub, snapshot, Some(access)).await {
+                        Ok(outcome) => log_pass(&user_sub, "snapshot build", &outcome),
                         Err(err) => {
                             tracing::warn!(user_sub, error = %err, "lazy reconciliation failed");
                         }
-                    }
-                    match tuning::retune_if_stale(&db, &user_sub, snapshot).await {
-                        Ok(Some(t)) => tracing::info!(
-                            user_sub,
-                            tuned = t.tuned,
-                            favourites = t.favourites,
-                            "ranking parameters retuned"
-                        ),
-                        Ok(None) => {}
-                        Err(err) => tracing::warn!(user_sub, error = %err, "tuning failed"),
                     }
                 });
             },
@@ -125,6 +101,7 @@ impl Services {
             tsundoku_owned_prefilter,
             metadata: metadata::MetadataService::new(mangabaka),
             sweeps: sweeps::SweepStatus::default(),
+            passes,
             snapshots: library_snapshot::LibrarySnapshotService::new(
                 codex,
                 SwrConfig {
@@ -143,5 +120,60 @@ impl Services {
             ),
             db,
         }
+    }
+}
+
+/// A full pass that could not run: Codex refused or failed the library read,
+/// or the verdict log could not be read or written.
+#[derive(Debug, thiserror::Error)]
+pub enum PassError {
+    #[error("reading the library from Codex failed")]
+    Codex(#[from] shisho_codex::CodexError),
+    #[error("reconciliation failed")]
+    Db(#[from] sea_orm::DbErr),
+}
+
+impl Services {
+    /// Re-read `user_sub`'s library from Codex with `credential` and run the
+    /// full per-user pass over it. Returns the fresh snapshot's `as_of` with
+    /// what the pass did.
+    pub async fn reconcile_now(
+        &self,
+        user_sub: &str,
+        credential: &CodexCredential,
+    ) -> Result<(chrono::DateTime<chrono::Utc>, user_pass::PassOutcome), PassError> {
+        let hit = self.snapshots.refresh(user_sub, credential).await?;
+        let access = reconciliation::CodexAccess {
+            client: self.snapshots.codex(),
+            credential,
+        };
+        let outcome =
+            user_pass::run(&self.db, &self.passes, user_sub, hit.value, Some(access)).await?;
+        log_pass(user_sub, "on demand", &outcome);
+        Ok((hit.as_of, outcome))
+    }
+}
+
+/// Log a pass that changed something; a pass that found nothing is silent.
+fn log_pass(user_sub: &str, trigger: &str, outcome: &user_pass::PassOutcome) {
+    let r = outcome.reconcile;
+    if r.flagged > 0 || r.resolved > 0 || r.inferred > 0 {
+        tracing::info!(
+            user_sub,
+            trigger,
+            flagged = r.flagged,
+            resolved = r.resolved,
+            inferred = r.inferred,
+            "reconciliation recorded changes"
+        );
+    }
+    if let Some(t) = &outcome.retuned {
+        tracing::info!(
+            user_sub,
+            trigger,
+            tuned = t.tuned,
+            favourites = t.favourites,
+            "ranking parameters retuned"
+        );
     }
 }

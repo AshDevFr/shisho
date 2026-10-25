@@ -50,15 +50,25 @@ fn init_tracing_inner(cfg: &AppConfig, stderr: bool) {
 /// which need the services but not the HTTP surface (providers, sessions, setup
 /// state). Errors when the recommendation service is not configured
 /// (`codex.base_url` unset), since there is nothing to run without it.
+///
+/// Also returns the stored-key access the reconcile sweep uses to read users'
+/// libraries, when encryption is on (stored Codex keys are sealed with the DEK).
 pub async fn build_services_from_config(
     cfg: &AppConfig,
-) -> anyhow::Result<shisho_services::Services> {
+) -> anyhow::Result<(
+    shisho_services::Services,
+    Option<shisho_services::sweeps::StoredKeys>,
+)> {
     let dek = shisho_db::keys::bootstrap_dek(cfg)?;
     let db = shisho_db::connect(cfg, dek.as_ref()).await?;
     shisho_db::run_migrations(&db).await?;
-    shisho_api::build_services(cfg, db)
+    let services = shisho_api::build_services(cfg, db)
         .await?
-        .context("the recommendation service is not configured (set codex.base_url)")
+        .context("the recommendation service is not configured (set codex.base_url)")?;
+    let keys = dek
+        .zip(shisho_api::build_codex_identity(cfg))
+        .map(|(dek, identity)| shisho_services::sweeps::StoredKeys { identity, dek });
+    Ok((services, keys))
 }
 
 /// Open the (optionally encrypted) database, run migrations, and assemble the

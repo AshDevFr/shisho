@@ -243,6 +243,24 @@ impl LibrarySnapshotService {
             .await
     }
 
+    /// Build the caller's snapshot from Codex now, replacing any cached one,
+    /// without firing the build hook: the caller runs the per-user pass itself.
+    pub async fn refresh(
+        &self,
+        user_sub: &str,
+        credential: &CodexCredential,
+    ) -> Result<Cached<Arc<LibrarySnapshot>>, CodexError> {
+        let snapshot = Arc::new(build(&self.codex, credential).await?);
+        let as_of = self
+            .cache
+            .insert(user_sub.to_owned(), Arc::clone(&snapshot));
+        Ok(Cached {
+            value: snapshot,
+            as_of,
+            freshness: shisho_cache::Freshness::Fresh,
+        })
+    }
+
     /// The caller's cached Codex index (external id -> series UUID), built once
     /// from the slim `external-index` endpoint and reused per SWR semantics, so
     /// repeated identity resolutions (verdict links, ownership checks) don't each

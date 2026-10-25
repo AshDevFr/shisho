@@ -571,6 +571,10 @@ impl CacheConfig {
 pub struct SweepsConfig {
     /// Outcome-reconciliation sweep (weekly by default).
     pub reconcile_cron: String,
+    /// Whether the reconcile sweep re-reads each known user's library with
+    /// their stored Codex key (the full pass, one library fetch per user per
+    /// run). `false` limits it to the snapshots already cached.
+    pub reconcile_refresh: bool,
     /// Unresolvable-series scan (daily by default).
     pub unresolvable_cron: String,
 }
@@ -579,6 +583,7 @@ impl Default for SweepsConfig {
     fn default() -> Self {
         Self {
             reconcile_cron: "0 0 6 * * Mon".into(),
+            reconcile_refresh: true,
             unresolvable_cron: "0 30 5 * * *".into(),
         }
     }

@@ -15,6 +15,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useProviders } from "@/api/auth";
 import { type Status, useDumpRefresh, useStatus } from "@/api/status";
+import { whenWithAge } from "@/lib/time";
 
 /// Operational status: backend reachability, cache freshness, the MangaBaka
 /// dump age + refresh trigger, the caller's unresolvable-series list (with
@@ -108,7 +109,7 @@ function HealthPanel({ health }: { health: Status["health"] }) {
         <Group gap="xs" mt={4}>
           <Text size="sm" c="dimmed">
             Library snapshot warmed:{" "}
-            {health.caches.librarySnapshotLastWarmedAt ?? "never"}
+            {whenWithAge(health.caches.librarySnapshotLastWarmedAt, "never")}
           </Text>
         </Group>
       </Stack>
@@ -153,7 +154,10 @@ function DumpPanel({ health }: { health: Status["health"] }) {
           )}
         </Group>
         <Text size="sm" c="dimmed">
-          Dump modified: {mb.dumpModifiedAt ?? "—"}
+          Dump modified: {whenWithAge(mb.dumpModifiedAt, "unknown")}
+        </Text>
+        <Text size="sm" c="dimmed">
+          Last refreshed: {whenWithAge(mb.lastRefreshAt, "never")}
         </Text>
         {mb.lastRefreshError && (
           <Text size="sm" c="red">
@@ -197,7 +201,9 @@ function UnresolvablePanel({
                   ) : (
                     <Text fw={500}>{u.title}</Text>
                   )}
-                  <Code>{u.rawSources.join(", ")}</Code>
+                  {u.rawSources.length > 0 && (
+                    <Code>{u.rawSources.join(", ")}</Code>
+                  )}
                 </Group>
               </List.Item>
             ))}

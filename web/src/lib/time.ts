@@ -24,3 +24,11 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
 export function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString();
 }
+
+/// "10/25/2026, 3:08 PM (3 minutes ago)"; `fallback` when there is none.
+export function whenWithAge(
+  iso: string | null | undefined,
+  fallback: string,
+): string {
+  return iso ? `${formatWhen(iso)} (${timeAgo(iso)})` : fallback;
+}

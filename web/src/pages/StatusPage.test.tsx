@@ -53,6 +53,48 @@ const statusBody = {
 };
 
 describe("StatusPage", () => {
+  it("shows timestamps as local time with an age, and no empty source chip", async () => {
+    const warmed = "2026-07-01T12:34:56.789Z";
+    server.use(
+      http.get("/api/v1/status", () =>
+        HttpResponse.json({
+          ...statusBody,
+          health: {
+            ...statusBody.health,
+            caches: {
+              ...statusBody.health.caches,
+              librarySnapshotLastWarmedAt: warmed,
+            },
+          },
+          library: {
+            ...statusBody.library,
+            unresolvable: [
+              {
+                seriesId: "550e-2",
+                title: "No Sources",
+                rawSources: [],
+                codexUrl: null,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const { container } = renderWithProviders(<StatusPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("No Sources")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(warmed, { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(new Date(warmed).toLocaleString(), { exact: false }),
+    ).toBeInTheDocument();
+    // The only <code> would be the sources chip, and this series has none.
+    expect(container.querySelectorAll("code")).toHaveLength(0);
+  });
+
   it("renders health, dump, unresolvable, and key panels", async () => {
     server.use(
       http.get("/api/v1/status", () => HttpResponse.json(statusBody)),

@@ -1,6 +1,7 @@
 import {
   AppShell,
   Avatar,
+  Burger,
   Button,
   Center,
   Group,
@@ -12,6 +13,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
@@ -105,11 +107,30 @@ function Shell({
   };
 
   const items = navItems(multiUser, user?.isAdmin === true);
+  // Below the `sm` breakpoint the navbar is an overlay behind a menu button;
+  // above it, a fixed sidebar and no header.
+  const [opened, { toggle, close }] = useDisclosure(false);
 
   return (
-    <AppShell navbar={{ width: 200, breakpoint: "sm" }} padding="md">
+    <AppShell
+      header={{ height: { base: 52, sm: 0 } }}
+      navbar={{ width: 200, breakpoint: "sm", collapsed: { mobile: !opened } }}
+      padding="md"
+    >
+      <AppShell.Header hiddenFrom="sm" px="md">
+        <Group h="100%" gap="sm">
+          <Burger
+            opened={opened}
+            onClick={toggle}
+            size="sm"
+            aria-label="Toggle navigation"
+            aria-expanded={opened}
+          />
+          <Title order={4}>shisho</Title>
+        </Group>
+      </AppShell.Header>
       <AppShell.Navbar p="xs">
-        <Title order={3} p="sm">
+        <Title order={3} p="sm" visibleFrom="sm">
           shisho
         </Title>
         {items.map((item) => (
@@ -119,6 +140,7 @@ function Shell({
             to={item.to}
             label={item.label}
             active={pathname === item.to}
+            onClick={close}
           />
         ))}
         <Stack mt="auto" p="xs" gap="xs">

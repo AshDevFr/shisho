@@ -153,7 +153,7 @@ fn outcome_weight(outcome: Outcome) -> Option<f64> {
         Outcome::Liked => Some(0.5),
         Outcome::Dropped => Some(-0.8),
         Outcome::Dnf => Some(-0.5),
-        Outcome::Mixed | Outcome::Other => None,
+        Outcome::Mixed | Outcome::NotInterested | Outcome::Reopened | Outcome::Other => None,
     }
 }
 

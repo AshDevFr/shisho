@@ -952,6 +952,128 @@
         ]
       }
     },
+    "/api/v1/recommendations": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "The caller's current recommendations, re-evaluated against their library.",
+        "operationId": "current",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentRecommendationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recommendations/sync": {
+      "post": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Re-read the caller's library from Codex and run the full feedback pass.",
+        "operationId": "sync",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/setup": {
       "get": {
         "tags": [
@@ -1616,6 +1738,44 @@
           }
         }
       },
+      "CurrentRecommendationsResponse": {
+        "type": "object",
+        "description": "The re-evaluated list, ordered for display (tier, then newest).",
+        "required": [
+          "recommended",
+          "reading"
+        ],
+        "properties": {
+          "libraryAsOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the library snapshot the split is based on was read (ISO 8601)."
+          },
+          "libraryGap": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the library could not be read, when it could not. Every standing\nseries is then listed under `recommended`, unchecked against reading."
+          },
+          "reading": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecommendationDto"
+            },
+            "description": "Standing, started in Codex, waiting for an outcome."
+          },
+          "recommended": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecommendationDto"
+            },
+            "description": "Standing, not started."
+          }
+        }
+      },
       "DbHealth": {
         "type": "object",
         "required": [
@@ -1955,6 +2115,45 @@
           }
         }
       },
+      "RecommendationDto": {
+        "type": "object",
+        "description": "One standing recommendation.",
+        "required": [
+          "verdict",
+          "timesRecommended",
+          "inLibrary"
+        ],
+        "properties": {
+          "bookCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "booksRead": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Books read across the furthest-along owned copy."
+          },
+          "inLibrary": {
+            "type": "boolean",
+            "description": "The caller owns a copy in Codex (an acquirable pick bought since)."
+          },
+          "timesRecommended": {
+            "type": "integer",
+            "description": "How many recommendation sessions named the series.",
+            "minimum": 0
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/VerdictDto",
+            "description": "The latest standing verdict for the series; record outcomes against\nits `id`."
+          }
+        }
+      },
       "RecordOutcomeRequest": {
         "type": "object",
         "description": "The reading outcome to record for a series.",
@@ -2073,6 +2272,41 @@
           "mintedKey": {
             "$ref": "#/components/schemas/MintedKeyStatus",
             "description": "The caller's minted Codex key state."
+          }
+        }
+      },
+      "SyncResponse": {
+        "type": "object",
+        "description": "What a sync recorded.",
+        "required": [
+          "libraryAsOf",
+          "outcomesInferred",
+          "questionsRaised",
+          "questionsResolved",
+          "retuned"
+        ],
+        "properties": {
+          "libraryAsOf": {
+            "type": "string"
+          },
+          "outcomesInferred": {
+            "type": "integer",
+            "description": "Outcomes recorded (or withdrawn) from what Codex shows.",
+            "minimum": 0
+          },
+          "questionsRaised": {
+            "type": "integer",
+            "description": "Reconciliation questions newly raised.",
+            "minimum": 0
+          },
+          "questionsResolved": {
+            "type": "integer",
+            "description": "Reconciliation questions closed.",
+            "minimum": 0
+          },
+          "retuned": {
+            "type": "boolean",
+            "description": "Whether ranking parameters were recomputed."
           }
         }
       },
@@ -2289,6 +2523,10 @@
     {
       "name": "profile",
       "description": "Taste-profile management: read the current profile and version history, edit it directly, and approve or reject pending consolidation proposals. Reads require profile:read, writes profile:write."
+    },
+    {
+      "name": "recommendations",
+      "description": "The caller's current recommendations: the verdict log re-evaluated per series against itself and the live Codex library, split into recommended and reading. Sync re-reads the library and runs the full feedback pass. Reads require verdicts:read, sync verdicts:write."
     },
     {
       "name": "verdicts",

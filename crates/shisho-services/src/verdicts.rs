@@ -30,6 +30,10 @@ pub enum Outcome {
     Mixed,
     Dropped,
     Dnf,
+    /// Turned down before reading: a judgment of the pitch, not of a read.
+    NotInterested,
+    /// Withdraws the series' earlier outcome, so it reads as open again.
+    Reopened,
     Other,
 }
 
@@ -47,6 +51,8 @@ impl Outcome {
             "mixed" => Self::Mixed,
             "dropped" | "drop" => Self::Dropped,
             "dnf" | "didnotfinish" => Self::Dnf,
+            "notinterested" | "notforme" => Self::NotInterested,
+            "reopened" | "reopen" => Self::Reopened,
             _ => Self::Other,
         }
     }
@@ -58,6 +64,8 @@ impl Outcome {
             Self::Mixed => "mixed",
             Self::Dropped => "dropped",
             Self::Dnf => "dnf",
+            Self::NotInterested => "not_interested",
+            Self::Reopened => verdicts::REOPENED,
             Self::Other => "other",
         }
     }
@@ -126,4 +134,18 @@ pub async fn record_feedback(
         deduplicated,
         flags_resolved,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn not_interested_and_reopened_are_part_of_the_vocabulary() {
+        assert_eq!(Outcome::parse("Not interested"), Outcome::NotInterested);
+        assert_eq!(Outcome::parse("not_interested"), Outcome::NotInterested);
+        assert_eq!(Outcome::NotInterested.as_str(), "not_interested");
+        // Stored verbatim as the value the fold reads as a withdrawal.
+        assert_eq!(Outcome::parse("reopened").as_str(), verdicts::REOPENED);
+    }
 }

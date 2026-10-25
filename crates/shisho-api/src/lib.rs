@@ -13,6 +13,7 @@ pub mod keys;
 pub mod middleware;
 pub mod oauth_routes;
 pub mod profile;
+pub mod recommendations;
 pub mod setup;
 pub mod static_files;
 pub mod status;
@@ -188,6 +189,8 @@ fn build_router(state: Arc<AppState>, extra_scoped: Router<Arc<AppState>>) -> Ro
         .nest("/profile", profile::router())
         // Verdict-log browsing + outcome recording; own verdicts:read/write guard.
         .nest("/verdicts", verdicts::router())
+        // Home's re-evaluated list + Codex sync; same verdicts:read/write guard.
+        .nest("/recommendations", recommendations::router())
         // Operational status + dump-refresh action; own status:read/write guard.
         .nest("/status", status::router())
         // Admin routes self-gate on require_admin inside each handler.

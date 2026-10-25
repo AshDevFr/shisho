@@ -142,7 +142,9 @@ pub fn evaluate_outcomes(
         let bucket = match outcome {
             Outcome::Loved | Outcome::Liked => &mut liked,
             Outcome::Dropped | Outcome::Dnf => &mut disliked,
-            Outcome::Mixed | Outcome::Other => continue,
+            Outcome::Mixed | Outcome::NotInterested | Outcome::Reopened | Outcome::Other => {
+                continue;
+            }
         };
         if snapshot.series_by_uuid(series_id).is_none() {
             continue;

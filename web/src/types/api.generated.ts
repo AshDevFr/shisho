@@ -270,6 +270,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's current recommendations, re-evaluated against their library. */
+        get: operations["current"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recommendations/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-read the caller's library from Codex and run the full feedback pass. */
+        post: operations["sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/setup": {
         parameters: {
             query?: never;
@@ -480,6 +514,20 @@ export interface components {
             name: string;
             scopes: components["schemas"]["Scope"][];
         };
+        /** @description The re-evaluated list, ordered for display (tier, then newest). */
+        CurrentRecommendationsResponse: {
+            /** @description When the library snapshot the split is based on was read (ISO 8601). */
+            libraryAsOf?: string | null;
+            /**
+             * @description Why the library could not be read, when it could not. Every standing
+             *     series is then listed under `recommended`, unchecked against reading.
+             */
+            libraryGap?: string | null;
+            /** @description Standing, started in Codex, waiting for an outcome. */
+            reading: components["schemas"]["RecommendationDto"][];
+            /** @description Standing, not started. */
+            recommended: components["schemas"]["RecommendationDto"][];
+        };
         DbHealth: {
             reachable: boolean;
         };
@@ -618,6 +666,25 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        /** @description One standing recommendation. */
+        RecommendationDto: {
+            /** Format: int64 */
+            bookCount?: number | null;
+            /**
+             * Format: int64
+             * @description Books read across the furthest-along owned copy.
+             */
+            booksRead?: number | null;
+            /** @description The caller owns a copy in Codex (an acquirable pick bought since). */
+            inLibrary: boolean;
+            /** @description How many recommendation sessions named the series. */
+            timesRecommended: number;
+            /**
+             * @description The latest standing verdict for the series; record outcomes against
+             *     its `id`.
+             */
+            verdict: components["schemas"]["VerdictDto"];
+        };
         /** @description The reading outcome to record for a series. */
         RecordOutcomeRequest: {
             /** @description Optional free-form notes on why. */
@@ -659,6 +726,18 @@ export interface components {
             library?: components["schemas"]["LibraryStatus"] | null;
             /** @description The caller's minted Codex key state. */
             mintedKey: components["schemas"]["MintedKeyStatus"];
+        };
+        /** @description What a sync recorded. */
+        SyncResponse: {
+            libraryAsOf: string;
+            /** @description Outcomes recorded (or withdrawn) from what Codex shows. */
+            outcomesInferred: number;
+            /** @description Reconciliation questions newly raised. */
+            questionsRaised: number;
+            /** @description Reconciliation questions closed. */
+            questionsResolved: number;
+            /** @description Whether ranking parameters were recomputed. */
+            retuned: boolean;
         };
         UnresolvableEntry: {
             /**
@@ -1495,6 +1574,109 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    current: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentRecommendationsResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

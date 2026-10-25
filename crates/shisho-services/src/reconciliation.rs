@@ -231,7 +231,7 @@ async fn last_progress(
 }
 
 /// The caller's series (every copy) carrying one of `identities`.
-fn matching_series<'a>(
+pub(crate) fn matching_series<'a>(
     snapshot: &'a LibrarySnapshot,
     identities: &'a HashSet<(Provider, String)>,
 ) -> impl Iterator<Item = &'a SnapshotSeries> {
@@ -245,7 +245,7 @@ fn matching_series<'a>(
 
 /// Every `(Provider, id)` identity the series' rows were recorded under —
 /// the join keys against the snapshot's external IDs.
-fn identity_keys(rows: &[verdict::Model]) -> HashSet<(Provider, String)> {
+pub(crate) fn identity_keys(rows: &[verdict::Model]) -> HashSet<(Provider, String)> {
     let mut keys = HashSet::new();
     for row in rows {
         if let Some(id) = row.mangabaka_id {

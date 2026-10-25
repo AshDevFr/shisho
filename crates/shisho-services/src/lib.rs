@@ -14,6 +14,7 @@ pub mod lookup;
 pub mod metadata;
 pub mod profile_filters;
 pub mod read_state;
+pub mod recommendations;
 pub mod reconciliation;
 pub mod sweeps;
 pub mod tsundoku_cache;

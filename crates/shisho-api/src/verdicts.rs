@@ -122,7 +122,10 @@ pub struct RecordOutcomeRequest {
 /// Resolve the signed-in user's `codex_user_sub` — the verdict-log key. Shares
 /// the profile endpoints' contract: a request with no owning user or a user who
 /// has not minted a Codex key yet gets a clear 409.
-async fn codex_user_sub(state: &AppState, scope: &CurrentScope) -> Result<String, AppError> {
+pub(crate) async fn codex_user_sub(
+    state: &AppState,
+    scope: &CurrentScope,
+) -> Result<String, AppError> {
     let user_id = scope.0.owner().ok_or_else(|| {
         AppError::Conflict("this credential is not tied to a user, so it has no verdict log".into())
     })?;
@@ -138,7 +141,7 @@ async fn codex_user_sub(state: &AppState, scope: &CurrentScope) -> Result<String
     })
 }
 
-fn to_dto(row: verdict::Model) -> VerdictDto {
+pub(crate) fn to_dto(row: verdict::Model) -> VerdictDto {
     VerdictDto {
         series_id: verdict_series_token(&row),
         id: row.id,
@@ -162,7 +165,7 @@ fn to_dto(row: verdict::Model) -> VerdictDto {
 
 /// Enrich verdict DTOs in place with series title, summary, cover, and deep
 /// links. Best-effort per field (see `shisho_services::verdict_views`).
-async fn enrich(
+pub(crate) async fn enrich(
     services: &shisho_services::Services,
     codex_index: &shisho_services::library_snapshot::CodexIndex,
     dtos: &mut [VerdictDto],
@@ -184,7 +187,7 @@ async fn enrich(
 /// `snapshots.external_index`, so repeated page loads reuse one lightweight
 /// `external-index` sweep instead of re-scanning Codex each time. Empty (links
 /// absent) when there is no usable credential or the build errors.
-async fn codex_external_index(
+pub(crate) async fn codex_external_index(
     state: &AppState,
     scope: &CurrentScope,
 ) -> Arc<shisho_services::library_snapshot::CodexIndex> {

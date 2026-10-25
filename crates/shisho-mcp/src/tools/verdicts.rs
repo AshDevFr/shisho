@@ -86,8 +86,10 @@ struct VerdictAck {
 pub struct RecordFeedbackParams {
     /// The series' external ID in any known notation.
     pub id: String,
-    /// What happened: "loved", "liked", "mixed", "dropped", or "dnf" (did not
-    /// finish). Other text is stored as "other" with the text kept in notes.
+    /// What happened: "loved", "liked", "mixed", "dropped", "dnf" (did not
+    /// finish), or "not interested" (turned down without reading). "reopened"
+    /// withdraws an earlier outcome. Other text is stored as "other" with the
+    /// text kept in notes.
     pub outcome: String,
     /// Rating for the series, 1-100 (Codex displays 1-10 with one decimal).
     /// Recorded as evidence; the Codex push is deferred (see codexGap).

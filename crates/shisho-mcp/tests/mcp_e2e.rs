@@ -217,3 +217,85 @@ async fn search_library_flags_a_partial_page_and_pages_on_with_offset() {
 
     client.cancel().await.unwrap();
 }
+
+fn args(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    value.as_object().cloned().unwrap()
+}
+
+#[tokio::test]
+async fn reconcile_records_a_rating_set_in_codex_after_the_recommendation() {
+    let codex = MockServer::start().await;
+    // Rated in Codex a moment after the recommendation below is recorded.
+    let later = (chrono::Utc::now() + chrono::Duration::minutes(1)).to_rfc3339();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/user/ratings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ratings": [{
+                "id": "r-1", "seriesId": "550e8400-e29b-41d4-a716-446655440002",
+                "rating": 90, "notes": null, "createdAt": later, "updatedAt": later
+            }]
+        })))
+        .with_priority(1)
+        .mount(&codex)
+        .await;
+    mount_codex(&codex).await;
+    let (client, _state) = connect(&codex).await;
+
+    let recorded = client
+        .call_tool(
+            CallToolRequestParams::new("record_verdict").with_arguments(args(serde_json::json!({
+                "id": "mangabaka:112092", "tier": "S",
+                "rationale": "fits the profile", "verified": true
+            }))),
+        )
+        .await
+        .expect("record_verdict call");
+    assert_ne!(recorded.is_error, Some(true), "{recorded:?}");
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("reconcile"))
+        .await
+        .expect("reconcile call");
+    assert_ne!(result.is_error, Some(true), "{result:?}");
+    let report = result.structured_content.expect("structured content");
+    assert_eq!(report["outcomesInferred"], 1, "{report}");
+
+    let profile = client
+        .call_tool(
+            CallToolRequestParams::new("get_profile")
+                .with_arguments(args(serde_json::json!({ "includeRecentFeedback": true }))),
+        )
+        .await
+        .expect("get_profile call");
+    let profile = profile.structured_content.expect("structured content");
+    let feedback = profile["recentFeedback"].as_array().expect("feedback list");
+    assert!(
+        feedback.iter().any(|f| f["inferred"] == true),
+        "the inferred outcome is visible: {profile}"
+    );
+
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test]
+async fn reconcile_relays_a_refused_codex_key_as_a_tool_error() {
+    let codex = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/series/full"))
+        .respond_with(ResponseTemplate::new(401))
+        .with_priority(1)
+        .mount(&codex)
+        .await;
+    mount_codex(&codex).await;
+    let (client, _state) = connect(&codex).await;
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("reconcile"))
+        .await
+        .expect("a tool result, not a protocol error");
+    assert_eq!(result.is_error, Some(true), "{result:?}");
+    let text = format!("{:?}", result.content);
+    assert!(text.contains("re-authenticate"), "{text}");
+
+    client.cancel().await.unwrap();
+}

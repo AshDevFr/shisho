@@ -6,7 +6,9 @@ dislike, and are allergic to; it must stay short, current, and evidenced.
 
 ## Workflow
 
-1. Read the current profile with its evidence in one call:
+1. Call `reconcile` first, so outcomes the user set in Codex since the
+   last sync (ratings, stalled reads) are in the evidence. Then read the
+   current profile with its evidence in one call:
    `get_profile` with `includeRecentFeedback: true`. Note the profile's
    `version` — you will propose against it. `recentFeedback` lists every
    outcome recorded since the profile last changed. Entries marked

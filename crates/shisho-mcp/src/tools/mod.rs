@@ -15,6 +15,7 @@ pub mod candidates;
 pub mod library;
 pub mod lookup;
 pub mod profile;
+pub mod reconcile;
 pub mod status;
 pub mod verdicts;
 

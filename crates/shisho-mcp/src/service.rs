@@ -35,8 +35,9 @@ use shisho_services::codex_identity::IdentityError;
 const INSTRUCTIONS: &str = "Shisho is a library-aware manga recommendation service over the \
 caller's own Codex library. Use get_candidates for recommendation pools, lookup/search_library \
 for series details, list_libraries to scope a session, record_verdict to log every \
-recommendation decision, record_feedback for reading outcomes, get_profile/propose_profile_update \
-for the taste profile, and status to qualify data freshness. The recommend and consolidate \
+recommendation decision, record_feedback for reading outcomes, reconcile to pick up outcomes the \
+user set in Codex (ratings, stalled reads), get_profile/propose_profile_update for the taste \
+profile, and status to qualify data freshness. The recommend and consolidate \
 prompts encode the full workflows.";
 
 #[derive(Clone)]
@@ -57,6 +58,7 @@ impl McpService {
                 + Self::library_router()
                 + Self::verdicts_router()
                 + Self::profile_router()
+                + Self::reconcile_router()
                 + Self::status_router(),
             prompt_router: Self::prompt_router(),
         }
@@ -149,7 +151,7 @@ pub(crate) fn required_scope(tool: &str) -> Option<Scope> {
         "get_candidates" => Some(Scope::CANDIDATES_READ),
         "lookup" => Some(Scope::LOOKUP_READ),
         "list_libraries" | "search_library" => Some(Scope::LIBRARY_READ),
-        "record_verdict" | "record_feedback" => Some(Scope::VERDICTS_WRITE),
+        "record_verdict" | "record_feedback" | "reconcile" => Some(Scope::VERDICTS_WRITE),
         "get_profile" => Some(Scope::PROFILE_READ),
         "propose_profile_update" => Some(Scope::PROFILE_WRITE),
         "status" => Some(Scope::STATUS_READ),
@@ -262,12 +264,13 @@ mod tests {
         client_with_state(state, local(Scope::all())).await
     }
 
-    const ALL_TOOLS: [&str; 9] = [
+    const ALL_TOOLS: [&str; 10] = [
         "get_candidates",
         "get_profile",
         "list_libraries",
         "lookup",
         "propose_profile_update",
+        "reconcile",
         "record_feedback",
         "record_verdict",
         "search_library",
@@ -357,6 +360,7 @@ mod tests {
             "record_verdict",
             "record_feedback",
             "propose_profile_update",
+            "reconcile",
         ];
 
         let state = test_state(Default::default()).await;
@@ -410,6 +414,31 @@ mod tests {
             }),
             "the connector grant must not include keys:manage"
         );
+    }
+
+    /// `reconcile` writes outcome rows, so read scopes alone do not reach it.
+    #[tokio::test]
+    async fn reconcile_needs_verdict_write() {
+        let state = test_state(Default::default()).await;
+        let reads = vec![
+            Scope::CANDIDATES_READ,
+            Scope::LIBRARY_READ,
+            Scope::PROFILE_READ,
+            Scope::STATUS_READ,
+        ];
+        let client = client_with_state(state, local(reads)).await;
+
+        let err = client
+            .call_tool(CallToolRequestParams::new("reconcile"))
+            .await
+            .unwrap_err();
+        match err {
+            ServiceError::McpError(data) => {
+                assert!(data.message.contains("verdicts:write"), "{}", data.message);
+            }
+            other => panic!("expected an MCP error, got {other:?}"),
+        }
+        client.cancel().await.unwrap();
     }
 
     #[tokio::test]

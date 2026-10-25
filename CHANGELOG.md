@@ -2,6 +2,18 @@
 
 All notable changes to shisho will be documented in this file.
 
+## [0.1.3] - 2026-10-25
+
+### Features
+
+- *(api)* Serve current recommendations re-evaluated against the log and library
+- *(web)* Make Home the read-next list of current recommendations
+- *(web)* Turn Verdicts into History with one aligned table, rename Profile to Account
+
+### Bug Fixes
+
+- *(web)* Make the app usable on phones and show readable Status times
+
 ## [0.1.2] - 2026-10-25
 
 ### Features

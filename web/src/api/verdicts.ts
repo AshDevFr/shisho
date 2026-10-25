@@ -59,6 +59,8 @@ export function useRecordOutcome() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: VERDICTS_KEY });
+      // Home's list is the same log, re-evaluated.
+      queryClient.invalidateQueries({ queryKey: ["recommendations"] });
     },
   });
 }

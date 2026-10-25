@@ -2,6 +2,13 @@
 
 All notable changes to shisho will be documented in this file.
 
+## [0.1.2] - 2026-10-25
+
+### Features
+
+- *(sweeps)* Run the full reconcile for every user on the schedule
+- *(mcp)* Add a reconcile tool that syncs feedback from Codex on demand
+
 ## [0.1.1] - 2026-10-24
 
 ### Features

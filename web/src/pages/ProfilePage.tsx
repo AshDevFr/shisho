@@ -18,7 +18,7 @@ export function ProfilePage() {
 
   return (
     <Stack gap="xl">
-      <Title order={2}>Profile</Title>
+      <Title order={2}>Account</Title>
       <SettingsSection title="API keys">
         <ApiKeysPanel />
       </SettingsSection>

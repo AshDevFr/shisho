@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "@/mocks/server";
+import { useUiStore } from "@/stores/ui";
 import { VerdictsPage } from "./VerdictsPage";
 
 function renderWithProviders(ui: ReactNode) {
@@ -42,7 +43,49 @@ const oneSession = [
   },
 ];
 
+const row = (id: number, title: string, extra = {}) => ({
+  id,
+  seriesId: `mangabaka:${id}`,
+  title,
+  tier: "A",
+  rationale: `${title} rationale`,
+  verified: true,
+  retracted: false,
+  createdAt: "2026-07-01T00:00:00Z",
+  ...extra,
+});
+
+const twoSessions = [
+  {
+    sessionId: "session-b",
+    startedAt: "2026-07-02T00:00:00Z",
+    verdicts: [
+      row(1, "Second Series"),
+      row(3, "Passed Series", { tier: "pass" }),
+      row(4, "Retracted Series", {
+        retracted: true,
+        retractionReason: "failedVerification",
+      }),
+    ],
+  },
+  {
+    sessionId: "session-a",
+    startedAt: "2026-07-01T00:00:00Z",
+    verdicts: [
+      row(5, "Loved Series", {
+        tier: "feedback",
+        outcome: "loved",
+        rationale: "",
+      }),
+    ],
+  },
+];
+
 describe("VerdictsPage", () => {
+  beforeEach(() => {
+    useUiStore.setState({ verdictsView: "card" });
+  });
+
   it("renders the session-grouped log with its rows", async () => {
     server.use(
       http.get("/api/v1/verdicts", () => HttpResponse.json(oneSession)),
@@ -53,12 +96,16 @@ describe("VerdictsPage", () => {
       expect(screen.getByText("fits the profile")).toBeInTheDocument(),
     );
     expect(screen.getByText("session-a")).toBeInTheDocument();
-    expect(screen.getByText("S")).toBeInTheDocument();
+    // The tier badge (the Tier filter lists "S" as an option too).
+    expect(
+      screen.getAllByText("S").some((el) => el.closest(".mantine-Badge-root")),
+    ).toBe(true);
     // The title leads; the raw id is still shown as a secondary line.
     expect(
       screen.getByText("Frieren: Beyond Journey's End"),
     ).toBeInTheDocument();
-    expect(screen.getByText("mangabaka:1")).toBeInTheDocument();
+    // The raw id is a hover detail now, not a line under the title.
+    expect(screen.queryByText("mangabaka:1")).not.toBeInTheDocument();
     // Deep links to all three sources.
     expect(screen.getByRole("link", { name: /MangaBaka/ })).toHaveAttribute(
       "href",
@@ -108,6 +155,45 @@ describe("VerdictsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(posted).toBe(true));
+  });
+
+  it("lists every session in one table with a session column", async () => {
+    useUiStore.setState({ verdictsView: "table" });
+    server.use(
+      http.get("/api/v1/verdicts", () => HttpResponse.json(twoSessions)),
+    );
+    renderWithProviders(<VerdictsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Second Series")).toBeInTheDocument(),
+    );
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(
+      screen.getByRole("columnheader", { name: "Session" }),
+    ).toBeInTheDocument();
+    // The session is a column: on every row, not a container per session.
+    expect(screen.getAllByText("session-b")).toHaveLength(3);
+    expect(screen.getAllByText("session-a")).toHaveLength(1);
+  });
+
+  it("offers an outcome only on standing recommendations", async () => {
+    server.use(
+      http.get("/api/v1/verdicts", () => HttpResponse.json(twoSessions)),
+    );
+    renderWithProviders(<VerdictsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Second Series")).toBeInTheDocument(),
+    );
+    // Standing: id 1. Pass (3), retracted (4) and feedback (5): none.
+    expect(
+      screen.getByLabelText("Set outcome for verdict 1"),
+    ).toBeInTheDocument();
+    for (const id of [3, 4, 5]) {
+      expect(
+        screen.queryByLabelText(`Set outcome for verdict ${id}`),
+      ).not.toBeInTheDocument();
+    }
   });
 
   it("shows an actionable message when the caller has no Codex identity", async () => {

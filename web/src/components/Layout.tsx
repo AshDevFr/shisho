@@ -26,9 +26,9 @@ import { ColorSchemeToggle } from "./ColorSchemeToggle";
 type NavPath =
   | "/"
   | "/taste-profile"
-  | "/verdicts"
+  | "/history"
   | "/status"
-  | "/profile"
+  | "/account"
   | "/settings";
 // (all domain + account nav paths; kept as a literal union for typed links)
 type NavItem = { to: NavPath; label: string };
@@ -38,20 +38,20 @@ type NavItem = { to: NavPath; label: string };
 const BASE_NAV: NavItem[] = [
   { to: "/", label: "Home" },
   { to: "/taste-profile", label: "Taste profile" },
-  { to: "/verdicts", label: "Verdicts" },
+  { to: "/history", label: "History" },
   { to: "/status", label: "Status" },
 ];
 
 /// The navbar entries for the current mode/role.
 ///
 /// - Single-user: the domain pages plus one flat "Settings" entry.
-/// - Multi-user: the domain pages, a per-user "Profile" (account) entry, plus an
+/// - Multi-user: the domain pages, a per-user "Account" entry, plus an
 ///   "Admin" entry (→ /settings) only for admins.
 function navItems(multiUser: boolean, isAdmin: boolean): NavItem[] {
   if (!multiUser) {
     return [...BASE_NAV, { to: "/settings", label: "Settings" }];
   }
-  const items: NavItem[] = [...BASE_NAV, { to: "/profile", label: "Profile" }];
+  const items: NavItem[] = [...BASE_NAV, { to: "/account", label: "Account" }];
   if (isAdmin) {
     items.push({ to: "/settings", label: "Admin" });
   }

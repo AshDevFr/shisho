@@ -16,11 +16,20 @@ const TIER_COLORS: Record<string, string> = {
   B: "blue",
   C: "yellow",
   D: "orange",
-  pass: "gray",
 };
 
+/// A recommendation tier as a filled badge. Anything else (`pass`, the
+/// `feedback` rows) is an outline: not a grade, and a filled gray badge lost
+/// its text in dark mode.
 export function TierBadge({ tier }: { tier: string }) {
-  const color = TIER_COLORS[tier] ?? TIER_COLORS[tier.toUpperCase()] ?? "gray";
+  const color = TIER_COLORS[tier.toUpperCase()];
+  if (!color) {
+    return (
+      <Badge variant="outline" color="gray">
+        {tier}
+      </Badge>
+    );
+  }
   return (
     <Badge variant="filled" color={color} autoContrast>
       {tier}

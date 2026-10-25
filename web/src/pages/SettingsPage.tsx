@@ -24,7 +24,7 @@ export function SettingsPage() {
   if (multiUser) {
     // Wait for `me` before deciding; redirect non-admins to their Profile.
     if (me && me.isAdmin !== true) {
-      return <Navigate to="/profile" />;
+      return <Navigate to="/account" />;
     }
     return (
       <Stack gap="xl">

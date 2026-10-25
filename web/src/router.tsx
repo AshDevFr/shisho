@@ -3,6 +3,7 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
 } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
 import { HomePage } from "@/pages/HomePage";
@@ -52,7 +53,7 @@ const homeRoute = createRoute({
 // profile; the page redirects to /settings there.
 const profileRoute = createRoute({
   getParentRoute: () => layoutRoute,
-  path: "/profile",
+  path: "/account",
   component: ProfilePage,
 });
 
@@ -64,11 +65,28 @@ const tasteProfileRoute = createRoute({
   component: TasteProfilePage,
 });
 
-// The append-only verdict log with outcome correction. Both auth modes.
+// History: the append-only verdict log with outcome correction. Both auth
+// modes.
 const verdictsRoute = createRoute({
   getParentRoute: () => layoutRoute,
-  path: "/verdicts",
+  path: "/history",
   component: VerdictsPage,
+});
+
+// The pages' former paths, kept so old bookmarks land on the renamed pages.
+const legacyVerdictsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/verdicts",
+  beforeLoad: () => {
+    throw redirect({ to: "/history" });
+  },
+});
+const legacyProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile",
+  beforeLoad: () => {
+    throw redirect({ to: "/account" });
+  },
 });
 
 // Operational status: health, dump refresh, unresolvable list, key regenerate.
@@ -89,6 +107,8 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
+  legacyVerdictsRoute,
+  legacyProfileRoute,
   layoutRoute.addChildren([
     homeRoute,
     tasteProfileRoute,

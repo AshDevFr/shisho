@@ -15,15 +15,18 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import {
+  type SessionGroup,
   useRecordOutcome,
   useVerdicts,
   type Verdict,
   type VerdictFilters,
 } from "@/api/verdicts";
+import { OutcomeMenu } from "@/components/OutcomeMenu";
 import {
   ClampedTip,
   LinkChips,
@@ -31,12 +34,26 @@ import {
   seriesTitle,
   TierBadge,
 } from "@/components/verdictBits";
+import { formatWhen } from "@/lib/time";
 import { useUiStore } from "@/stores/ui";
 
 const TRISTATE = [
   { value: "", label: "Any" },
   { value: "true", label: "Yes" },
   { value: "false", label: "No" },
+];
+
+const TIER_FILTER = ["S", "A", "B", "C", "D", "pass", "feedback"];
+// Stored outcome values (the server normalizes what it is sent to these).
+const OUTCOME_FILTER = [
+  { value: "loved", label: "Loved" },
+  { value: "liked", label: "Liked" },
+  { value: "mixed", label: "Mixed" },
+  { value: "dropped", label: "Dropped" },
+  { value: "dnf", label: "Did not finish" },
+  { value: "not_interested", label: "Not interested" },
+  { value: "reopened", label: "Reopened" },
+  { value: "other", label: "Other" },
 ];
 
 // Structured reading outcomes; `__other__` reveals a free-text field so the
@@ -48,14 +65,27 @@ const OUTCOME_OPTIONS = [
   { value: "mixed", label: "Mixed" },
   { value: "dropped", label: "Dropped" },
   { value: "dnf", label: "Did not finish" },
+  { value: "not interested", label: "Not interested" },
   { value: OTHER, label: "Other…" },
 ];
 
-/// The append-only recommendation log: every verdict the recommend sessions
-/// logged, filterable by tier / verified / retracted / outcome and grouped by
-/// session. Recording an outcome appends a feedback row (the log is never
-/// mutated in place) and feeds the consolidation loop. Render as cards or a
-/// table; the choice persists.
+/// Whether an outcome can be recorded against this row: only a standing
+/// recommendation. Feedback rows are outcomes already, a pass was never a
+/// recommendation, and a retraction withdrew it.
+function takesOutcome(v: Verdict): boolean {
+  return (
+    !v.retracted &&
+    v.outcome == null &&
+    v.seriesId != null &&
+    v.tier.toLowerCase() !== "pass"
+  );
+}
+
+/// History: the append-only recommendation log, every verdict the recommend
+/// sessions logged and every outcome since, filterable by tier / verified /
+/// retracted / outcome. Cards group by session; the table is one list with a
+/// session column. Recording an outcome appends a feedback row (the log is
+/// never mutated in place). Home shows the same log re-evaluated.
 export function VerdictsPage() {
   const [filters, setFilters] = useState<VerdictFilters>({});
   const verdicts = useVerdicts(filters);
@@ -65,7 +95,7 @@ export function VerdictsPage() {
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="flex-end">
-        <Title order={2}>Verdicts</Title>
+        <Title order={2}>History</Title>
         <SegmentedControl
           value={view}
           onChange={(v) => setView(v as "card" | "table")}
@@ -90,26 +120,28 @@ export function VerdictsPage() {
         <Text c="dimmed">No verdicts match these filters.</Text>
       )}
 
-      {verdicts.data?.map((group) => (
-        <Paper key={group.sessionId} withBorder p="md">
-          <Group gap="xs" mb="sm">
-            <Title order={5}>Session</Title>
-            <Badge variant="light">{group.sessionId}</Badge>
-            <Text size="xs" c="dimmed">
-              {new Date(group.startedAt).toLocaleString()}
-            </Text>
-          </Group>
-          {view === "card" ? (
-            <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="sm">
-              {group.verdicts.map((v) => (
-                <VerdictCard key={v.id} verdict={v} />
-              ))}
-            </SimpleGrid>
-          ) : (
-            <VerdictsTable verdicts={group.verdicts} />
-          )}
-        </Paper>
-      ))}
+      {verdicts.data &&
+        verdicts.data.length > 0 &&
+        (view === "card" ? (
+          verdicts.data.map((group) => (
+            <Paper key={group.sessionId} withBorder p="md">
+              <Group gap="xs" mb="sm">
+                <Title order={5}>Session</Title>
+                <Badge variant="light">{group.sessionId}</Badge>
+                <Text size="xs" c="dimmed">
+                  {formatWhen(group.startedAt)}
+                </Text>
+              </Group>
+              <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="sm">
+                {group.verdicts.map((v) => (
+                  <VerdictCard key={v.id} verdict={v} />
+                ))}
+              </SimpleGrid>
+            </Paper>
+          ))
+        ) : (
+          <VerdictsTable groups={verdicts.data} />
+        ))}
     </Stack>
   );
 }
@@ -128,21 +160,23 @@ function Filters({
 
   return (
     <Group align="flex-end">
-      <TextInput
+      <Select
         label="Tier"
-        placeholder="e.g. S, A, pass"
-        value={value.tier ?? ""}
-        onChange={(e) =>
-          onChange({ ...value, tier: e.currentTarget.value || undefined })
-        }
+        placeholder="Any"
+        data={TIER_FILTER}
+        value={value.tier ?? null}
+        onChange={(s) => onChange({ ...value, tier: s ?? undefined })}
+        clearable
+        w={130}
       />
-      <TextInput
+      <Select
         label="Outcome"
-        placeholder="e.g. loved"
-        value={value.outcome ?? ""}
-        onChange={(e) =>
-          onChange({ ...value, outcome: e.currentTarget.value || undefined })
-        }
+        placeholder="Any"
+        data={OUTCOME_FILTER}
+        value={value.outcome ?? null}
+        onChange={(s) => onChange({ ...value, outcome: s ?? undefined })}
+        clearable
+        w={170}
       />
       <Select
         label="Verified"
@@ -172,6 +206,18 @@ function Filters({
 
 // ---- Shared bits, reused by both the card and table views ----
 
+/// The series title, with its canonical id on hover (the id is for
+/// cross-checking with the MCP tools, not for reading).
+function SeriesTitle({ verdict, size }: { verdict: Verdict; size: string }) {
+  return (
+    <Tooltip label={verdict.seriesId} disabled={!verdict.seriesId} withArrow>
+      <Text fw={600} size={size} style={{ cursor: "default" }}>
+        {seriesTitle(verdict)}
+      </Text>
+    </Tooltip>
+  );
+}
+
 function StatusBadges({ verdict }: { verdict: Verdict }) {
   return (
     <>
@@ -181,10 +227,15 @@ function StatusBadges({ verdict }: { verdict: Verdict }) {
         </Badge>
       )}
       {verdict.retracted && (
-        <Badge color="red" variant="light" size="sm">
-          retracted
-          {verdict.retractionReason && `: ${verdict.retractionReason}`}
-        </Badge>
+        <Tooltip
+          label={verdict.retractionReason}
+          disabled={!verdict.retractionReason}
+          withArrow
+        >
+          <Badge color="red" variant="light" size="sm">
+            retracted
+          </Badge>
+        </Tooltip>
       )}
       {verdict.outcome && (
         <Badge color="grape" variant="light" size="sm">
@@ -223,13 +274,13 @@ function OutcomeControl({ verdict }: { verdict: Verdict }) {
   };
 
   return (
-    <Group gap="xs" wrap="nowrap" align="flex-end">
+    <Group gap="xs" wrap="wrap" align="flex-end">
       <NativeSelect
         label="Outcome"
         data={[{ value: "", label: "Set…" }, ...OUTCOME_OPTIONS]}
         value={status ?? ""}
         onChange={(e) => setStatus(e.currentTarget.value || null)}
-        w={130}
+        w={140}
         size="xs"
         aria-label={`Set outcome for verdict ${verdict.id}`}
       />
@@ -268,8 +319,15 @@ function OutcomeControl({ verdict }: { verdict: Verdict }) {
 // ---- Card view ----
 
 function VerdictCard({ verdict }: { verdict: Verdict }) {
+  // A retracted card is faded with a dashed border: readable in both colour
+  // schemes, and still visibly not a recommendation.
   return (
-    <Paper withBorder p="md" bg={verdict.retracted ? "dark.6" : undefined}>
+    <Paper
+      withBorder
+      p="md"
+      opacity={verdict.retracted ? 0.65 : 1}
+      style={verdict.retracted ? { borderStyle: "dashed" } : undefined}
+    >
       <Group align="flex-start" gap="md" wrap="nowrap">
         {verdict.coverUrl && (
           <Image
@@ -284,38 +342,30 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
         <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs" wrap="wrap" align="center">
             <TierBadge tier={verdict.tier} />
-            <Text fw={600} size="md">
-              {seriesTitle(verdict)}
-            </Text>
+            <SeriesTitle verdict={verdict} size="md" />
           </Group>
 
           <Group gap="xs">
-            {verdict.seriesId && (
-              <Text size="xs" c="dimmed">
-                {verdict.seriesId}
-              </Text>
-            )}
             <StatusBadges verdict={verdict} />
           </Group>
 
           <LinkChips verdict={verdict} />
 
-          {/* The series description, inline now that the cards are large. */}
           {verdict.summary && (
             <ClampedTip text={verdict.summary} lines={3} size="xs" dimmed />
           )}
 
           {/* The recommendation reason: the substance of the verdict. */}
-          <ClampedTip text={verdict.rationale} lines={4} />
+          {verdict.rationale && (
+            <ClampedTip text={verdict.rationale} lines={4} />
+          )}
           {verdict.notes && (
             <Text size="xs" c="dimmed">
               {verdict.notes}
             </Text>
           )}
 
-          {!verdict.retracted && verdict.seriesId && (
-            <OutcomeControl verdict={verdict} />
-          )}
+          {takesOutcome(verdict) && <OutcomeControl verdict={verdict} />}
         </Stack>
       </Group>
     </Paper>
@@ -324,24 +374,29 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
 
 // ---- Table view ----
 
-function VerdictsTable({ verdicts }: { verdicts: Verdict[] }) {
+/// One table across sessions (most recent first, as the groups arrive), so
+/// the columns line up; the session is a column rather than a container.
+function VerdictsTable({ groups }: { groups: SessionGroup[] }) {
+  const rows = groups.flatMap((g) =>
+    g.verdicts.map((v) => ({ verdict: v, session: g })),
+  );
   return (
-    <Table.ScrollContainer minWidth={720}>
+    <Table.ScrollContainer minWidth={960}>
       <Table verticalSpacing="sm" highlightOnHover>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th w={44} />
+            <Table.Th w={52} />
             <Table.Th>Series</Table.Th>
-            <Table.Th w={60}>Tier</Table.Th>
+            <Table.Th>Tier</Table.Th>
             <Table.Th>Status</Table.Th>
-            <Table.Th>Links</Table.Th>
             <Table.Th>Reason</Table.Th>
+            <Table.Th>Session</Table.Th>
             <Table.Th>Outcome</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {verdicts.map((v) => (
-            <Table.Tr key={v.id} opacity={v.retracted ? 0.6 : 1}>
+          {rows.map(({ verdict: v, session }) => (
+            <Table.Tr key={v.id} opacity={v.retracted ? 0.65 : 1}>
               <Table.Td>
                 {v.coverUrl && (
                   <Image
@@ -354,35 +409,39 @@ function VerdictsTable({ verdicts }: { verdicts: Verdict[] }) {
                   />
                 )}
               </Table.Td>
-              <Table.Td>
-                <Group gap={6}>
+              <Table.Td miw={200}>
+                <SeriesTitle verdict={v} size="sm" />
+                <Group gap={8} wrap="wrap">
                   <SummaryTip summary={v.summary} />
-                  <Text fw={500} size="sm">
-                    {seriesTitle(v)}
-                  </Text>
+                  <LinkChips verdict={v} />
                 </Group>
-                {v.seriesId && (
-                  <Text size="xs" c="dimmed">
-                    {v.seriesId}
-                  </Text>
-                )}
               </Table.Td>
-              <Table.Td>
+              <Table.Td style={{ whiteSpace: "nowrap" }}>
                 <TierBadge tier={v.tier} />
               </Table.Td>
               <Table.Td>
-                <Group gap={4}>
+                <Group gap={4} wrap="wrap" miw={90}>
                   <StatusBadges verdict={v} />
                 </Group>
               </Table.Td>
-              <Table.Td>
-                <LinkChips verdict={v} />
+              <Table.Td miw={240} maw={420}>
+                {v.rationale && <ClampedTip text={v.rationale} lines={2} />}
+                {v.notes && (
+                  <Text size="xs" c="dimmed" lineClamp={2}>
+                    {v.notes}
+                  </Text>
+                )}
               </Table.Td>
-              <Table.Td maw={280}>
-                <ClampedTip text={v.rationale} lines={1} />
+              <Table.Td style={{ whiteSpace: "nowrap" }}>
+                <Text size="xs">{session.sessionId}</Text>
+                <Text size="xs" c="dimmed">
+                  {new Date(v.createdAt).toLocaleDateString()}
+                </Text>
               </Table.Td>
               <Table.Td>
-                {!v.retracted && v.seriesId && <OutcomeControl verdict={v} />}
+                {takesOutcome(v) && (
+                  <OutcomeMenu verdictId={v.id} title={seriesTitle(v)} />
+                )}
               </Table.Td>
             </Table.Tr>
           ))}

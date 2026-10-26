@@ -610,6 +610,11 @@ export interface components {
             unresolvableCount: number;
         };
         /**
+         * @description Whether a series still waits on the reader.
+         * @enum {string}
+         */
+        LogState: "pending" | "settled";
+        /**
          * @description Backbone state: the dump is the healthy mode; API-only (dump not loaded)
          *     reports degraded so a first deploy knows to run the initial ingest.
          */
@@ -767,6 +772,11 @@ export interface components {
             notes?: string | null;
             /** @description The reading outcome recorded on this row (feedback rows carry it). */
             outcome?: string | null;
+            /**
+             * @description Whether the series is still a standing recommendation (no outcome,
+             *     pass or retraction yet): the rows an outcome can be recorded against.
+             */
+            pending: boolean;
             rationale: string;
             retracted: boolean;
             /**
@@ -779,6 +789,11 @@ export interface components {
              *     series identity, else absent.
              */
             seriesId?: string | null;
+            /**
+             * @description The series' current outcome, folded over the whole log, so a
+             *     recommendation row shows how it ended without its feedback row.
+             */
+            seriesOutcome?: string | null;
             /** @description The series description from the MangaBaka backbone, when available. */
             summary?: string | null;
             tier: string;
@@ -1860,8 +1875,19 @@ export interface operations {
                 verified?: boolean | null;
                 /** @description Only retracted (true) or standing (false) rows. */
                 retracted?: boolean | null;
-                /** @description Exact outcome match (e.g. "loved", "dropped"). */
+                /**
+                 * @description The series' current outcome (e.g. "loved", "dropped"): matches every
+                 *     row of a series whose latest outcome is this, feedback row or not.
+                 */
                 outcome?: string | null;
+                /**
+                 * @description `pending`: rows of series still waiting on the reader (what Home
+                 *     lists). `settled`: everything else (an outcome, a pass, a retraction).
+                 *     Omitted: both.
+                 */
+                state?: components["schemas"]["LogState"] | null;
+                /** @description `false` hides feedback (outcome) rows; omitted or `true` keeps them. */
+                feedback?: boolean | null;
             };
             header?: never;
             path?: never;

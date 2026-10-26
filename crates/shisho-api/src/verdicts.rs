@@ -12,6 +12,7 @@
 //! Keyed on the caller's `codex_user_sub`, like the profile endpoints: a user
 //! who has not minted a Codex key yet has no verdict log and gets a clear 409.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -25,9 +26,10 @@ use super::error::AppError;
 use crate::middleware::{CurrentScope, require_scope};
 use shisho_auth::keys::Resource;
 use shisho_db::entities::verdict;
-use shisho_db::repos::verdicts::verdict_series_token;
+use shisho_db::repos::verdicts::{SeriesKey, VerdictState, verdict_series_token};
 use shisho_db::repos::{users, verdicts};
 use shisho_ids::ExternalId;
+use shisho_services::recommendations::is_standing;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -49,8 +51,23 @@ pub struct VerdictFilters {
     pub verified: Option<bool>,
     /// Only retracted (true) or standing (false) rows.
     pub retracted: Option<bool>,
-    /// Exact outcome match (e.g. "loved", "dropped").
+    /// The series' current outcome (e.g. "loved", "dropped"): matches every
+    /// row of a series whose latest outcome is this, feedback row or not.
     pub outcome: Option<String>,
+    /// `pending`: rows of series still waiting on the reader (what Home
+    /// lists). `settled`: everything else (an outcome, a pass, a retraction).
+    /// Omitted: both.
+    pub state: Option<LogState>,
+    /// `false` hides feedback (outcome) rows; omitted or `true` keeps them.
+    pub feedback: Option<bool>,
+}
+
+/// Whether a series still waits on the reader.
+#[derive(Deserialize, ToSchema, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogState {
+    Pending,
+    Settled,
 }
 
 /// One verdict-log row, as the UI renders it.
@@ -73,6 +90,13 @@ pub struct VerdictDto {
     /// The reading outcome recorded on this row (feedback rows carry it).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// The series' current outcome, folded over the whole log, so a
+    /// recommendation row shows how it ended without its feedback row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_outcome: Option<String>,
+    /// Whether the series is still a standing recommendation (no outcome,
+    /// pass or retraction yet): the rows an outcome can be recorded against.
+    pub pending: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
     pub created_at: String,
@@ -150,7 +174,10 @@ pub(crate) fn to_dto(row: verdict::Model) -> VerdictDto {
         verified: row.verified,
         retracted: row.retracted,
         retraction_reason: row.retraction_reason,
+        series_outcome: row.outcome.clone(),
         outcome: row.outcome,
+        // Set from the series fold by the list handlers.
+        pending: false,
         notes: row.notes,
         created_at: row.created_at.to_rfc3339(),
         // Filled in by `enrich` when the recommendation service is configured.
@@ -220,13 +247,48 @@ pub(crate) async fn codex_external_index(
     }
 }
 
-fn matches(row: &verdict::Model, f: &VerdictFilters) -> bool {
+/// Where a row's series stands: its current outcome and whether it is still
+/// pending. A row with no series identity is its own series.
+struct SeriesView {
+    outcome: Option<String>,
+    pending: bool,
+}
+
+fn series_views(rows: &[verdict::Model]) -> Vec<SeriesView> {
+    let mut groups: HashMap<SeriesKey, Vec<verdict::Model>> = HashMap::new();
+    for row in rows {
+        if let Some(key) = SeriesKey::of(row) {
+            groups.entry(key).or_default().push(row.clone());
+        }
+    }
+    let folded: HashMap<SeriesKey, VerdictState> = groups
+        .into_iter()
+        .map(|(key, rows)| (key, verdicts::fold(&rows)))
+        .collect();
+    rows.iter()
+        .map(|row| {
+            let state = match SeriesKey::of(row).and_then(|k| folded.get(&k)) {
+                Some(state) => state.clone(),
+                None => verdicts::fold(std::slice::from_ref(row)),
+            };
+            SeriesView {
+                pending: is_standing(&state),
+                outcome: state.outcome,
+            }
+        })
+        .collect()
+}
+
+fn matches(row: &verdict::Model, series: &SeriesView, f: &VerdictFilters) -> bool {
     f.tier.as_ref().is_none_or(|t| &row.tier == t)
         && f.verified.is_none_or(|v| row.verified == v)
         && f.retracted.is_none_or(|r| row.retracted == r)
         && f.outcome
             .as_ref()
-            .is_none_or(|o| row.outcome.as_deref() == Some(o.as_str()))
+            .is_none_or(|o| series.outcome.as_deref() == Some(o.as_str()))
+        && f.state
+            .is_none_or(|s| (s == LogState::Pending) == series.pending)
+        && (f.feedback != Some(false) || row.outcome.is_none())
 }
 
 /// The caller's verdict log, filtered and grouped by session (most recent
@@ -253,15 +315,29 @@ pub async fn list_verdicts(
     let sub = codex_user_sub(&state, &scope).await?;
     // Oldest-first from the repo; keep the session id + arrival time alongside
     // each row so grouping survives the enrichment pass.
-    let rows: Vec<verdict::Model> = verdicts::list_for_user(&state.db, &sub)
+    // The series state folds over the whole log, before any filter drops rows.
+    let all = verdicts::list_for_user(&state.db, &sub)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let views = series_views(&all);
+    let rows: Vec<(verdict::Model, SeriesView)> = all
         .into_iter()
-        .filter(|r| matches(r, &filters))
+        .zip(views)
+        .filter(|(r, v)| matches(r, v, &filters))
         .collect();
-    let sessions: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
-    let createds: Vec<String> = rows.iter().map(|r| r.created_at.to_rfc3339()).collect();
-    let mut dtos: Vec<VerdictDto> = rows.into_iter().map(to_dto).collect();
+    let sessions: Vec<String> = rows.iter().map(|(r, _)| r.session_id.clone()).collect();
+    let createds: Vec<String> = rows
+        .iter()
+        .map(|(r, _)| r.created_at.to_rfc3339())
+        .collect();
+    let mut dtos: Vec<VerdictDto> = rows
+        .into_iter()
+        .map(|(row, view)| VerdictDto {
+            series_outcome: view.outcome,
+            pending: view.pending,
+            ..to_dto(row)
+        })
+        .collect();
 
     // Title / cover / deep links, when the recommendation service is configured.
     if let Some(services) = state.services.as_ref() {
@@ -273,8 +349,7 @@ pub async fn list_verdicts(
 
     // Group preserving first-seen session order, then present most-recent first.
     let mut order: Vec<String> = Vec::new();
-    let mut groups: std::collections::HashMap<String, SessionGroup> =
-        std::collections::HashMap::new();
+    let mut groups: HashMap<String, SessionGroup> = HashMap::new();
     for ((session, created), dto) in sessions.into_iter().zip(createds).zip(dtos) {
         match groups.get_mut(&session) {
             Some(g) => g.verdicts.push(dto),
@@ -512,9 +587,10 @@ mod tests {
             .unwrap();
         let groups = json_body(resp).await;
         let arr = groups.as_array().unwrap();
-        assert_eq!(arr.len(), 1, "the feedback session");
+        assert_eq!(arr.len(), 2, "the feedback session and the original one");
         assert_eq!(arr[0]["sessionId"], "feedback");
         assert_eq!(arr[0]["verdicts"][0]["outcome"], "loved");
+        assert_eq!(arr[1]["verdicts"][0]["seriesOutcome"], "loved");
 
         // The original S-tier verdict still exists, unmodified.
         let all = shisho_db::repos::verdicts::list_for_user(&state.db, SUB)
@@ -522,6 +598,101 @@ mod tests {
             .unwrap();
         assert_eq!(all.len(), 2, "original + appended feedback");
         assert!(all.iter().any(|r| r.id == id && r.outcome.is_none()));
+    }
+
+    /// Every row of the flattened response, as `(seriesId, tier)`.
+    fn rows(groups: &serde_json::Value) -> Vec<(String, String)> {
+        groups
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|g| g["verdicts"].as_array().unwrap().iter())
+            .map(|v| {
+                (
+                    v["seriesId"].as_str().unwrap().to_string(),
+                    v["tier"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    }
+
+    /// One standing pick, one read and loved, one passed.
+    async fn seed_mixed_log(app: &axum::Router, state: &api::AppState) {
+        seed(state, "s1", "A", "mangabaka:1").await;
+        let loved = seed(state, "s1", "S", "mangabaka:2").await;
+        seed(state, "s1", "pass", "mangabaka:3").await;
+        let resp = app
+            .clone()
+            .oneshot(post_json(
+                &format!("/api/v1/verdicts/{loved}/outcome"),
+                serde_json::json!({"outcome": "loved"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn pending_lists_only_standing_recommendations() {
+        let (app, state) = app().await;
+        seed_mixed_log(&app, &state).await;
+
+        let resp = app
+            .oneshot(get("/api/v1/verdicts?state=pending&feedback=false"))
+            .await
+            .unwrap();
+        let groups = json_body(resp).await;
+        assert_eq!(rows(&groups), [("mangabaka:1".into(), "A".into())]);
+        assert_eq!(groups[0]["verdicts"][0]["pending"], true);
+    }
+
+    #[tokio::test]
+    async fn settled_rows_carry_the_series_outcome_without_feedback_rows() {
+        let (app, state) = app().await;
+        seed_mixed_log(&app, &state).await;
+
+        let resp = app
+            .clone()
+            .oneshot(get("/api/v1/verdicts?state=settled&feedback=false"))
+            .await
+            .unwrap();
+        let groups = json_body(resp).await;
+        assert_eq!(
+            rows(&groups),
+            [
+                ("mangabaka:2".into(), "S".into()),
+                ("mangabaka:3".into(), "pass".into())
+            ]
+        );
+        let loved = &groups[0]["verdicts"][0];
+        assert_eq!(loved["seriesOutcome"], "loved");
+        assert_eq!(loved["pending"], false);
+
+        // With feedback rows shown, the outcome row joins its series.
+        let resp = app
+            .oneshot(get("/api/v1/verdicts?state=settled"))
+            .await
+            .unwrap();
+        let tiers: Vec<String> = rows(&json_body(resp).await)
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        assert!(tiers.contains(&"feedback".to_string()));
+    }
+
+    #[tokio::test]
+    async fn the_outcome_filter_matches_the_series_not_just_its_feedback_row() {
+        let (app, state) = app().await;
+        seed_mixed_log(&app, &state).await;
+
+        let resp = app
+            .oneshot(get("/api/v1/verdicts?outcome=loved&feedback=false"))
+            .await
+            .unwrap();
+        assert_eq!(
+            rows(&json_body(resp).await),
+            [("mangabaka:2".into(), "S".into())]
+        );
     }
 
     #[tokio::test]

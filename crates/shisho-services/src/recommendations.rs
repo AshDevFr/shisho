@@ -17,7 +17,7 @@ use crate::library_snapshot::LibrarySnapshot;
 use crate::read_state::ReadState;
 use crate::reconciliation::{identity_keys, matching_series};
 use shisho_db::entities::verdict;
-use shisho_db::repos::verdicts::{self, SeriesKey};
+use shisho_db::repos::verdicts::{self, SeriesKey, VerdictState};
 
 /// The tier a session gives a series it decided not to recommend.
 const PASS: &str = "pass";
@@ -63,15 +63,7 @@ pub async fn current(
 
     let mut out = CurrentRecommendations::default();
     for rows in groups.into_values() {
-        let state = verdicts::fold(&rows);
-        if state.outcome.is_some() || !state.has_verdict || state.retracted {
-            continue;
-        }
-        if state
-            .last_tier
-            .as_deref()
-            .is_some_and(|t| t.eq_ignore_ascii_case(PASS))
-        {
+        if !is_standing(&verdicts::fold(&rows)) {
             continue;
         }
         let Some(standing) = rows
@@ -118,6 +110,19 @@ pub async fn current(
     out.reading
         .sort_by_key(|c| Reverse((c.verdict.created_at, c.verdict.id)));
     Ok(out)
+}
+
+/// Whether a folded series is still a recommendation waiting on the reader:
+/// it has a verdict, no outcome, was not retracted, and its latest tier is not
+/// `pass`. History's pending filter uses the same test, so the two pages agree.
+pub fn is_standing(state: &VerdictState) -> bool {
+    state.outcome.is_none()
+        && state.has_verdict
+        && !state.retracted
+        && !state
+            .last_tier
+            .as_deref()
+            .is_some_and(|t| t.eq_ignore_ascii_case(PASS))
 }
 
 /// S, A, B, C, D, then any other tier; newest recommendation first within one.

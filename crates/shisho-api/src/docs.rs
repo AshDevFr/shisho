@@ -51,6 +51,7 @@ use utoipa::{Modify, OpenApi};
         super::profile::VersionDto,
         super::profile::EditProfileRequest,
         super::verdicts::VerdictDto,
+        super::verdicts::LogState,
         super::verdicts::SessionGroup,
         super::verdicts::RecordOutcomeRequest,
         super::recommendations::RecommendationDto,

@@ -5,12 +5,18 @@ import type { components } from "@/types/api.generated";
 export type SessionGroup = components["schemas"]["SessionGroup"];
 export type Verdict = components["schemas"]["VerdictDto"];
 
+export type LogState = components["schemas"]["LogState"];
+
 /// Filters for the verdict-log query. Undefined fields do not constrain.
+/// `outcome` matches the series' current outcome; `feedback: false` hides
+/// the outcome rows themselves.
 export type VerdictFilters = {
   tier?: string;
   verified?: boolean;
   retracted?: boolean;
   outcome?: string;
+  state?: LogState;
+  feedback?: boolean;
 };
 
 const VERDICTS_KEY = ["verdicts"] as const;
@@ -29,6 +35,8 @@ export function useVerdicts(filters: VerdictFilters) {
             verified: filters.verified,
             retracted: filters.retracted,
             outcome: filters.outcome || undefined,
+            state: filters.state,
+            feedback: filters.feedback,
           },
         },
       });

@@ -150,7 +150,14 @@ pub async fn current(
         .into_iter()
         .chain(current.reading)
         .collect();
-    let mut dtos: Vec<VerdictDto> = entries.iter().map(|c| to_dto(c.verdict.clone())).collect();
+    // Everything listed here is standing by construction.
+    let mut dtos: Vec<VerdictDto> = entries
+        .iter()
+        .map(|c| VerdictDto {
+            pending: true,
+            ..to_dto(c.verdict.clone())
+        })
+        .collect();
     if let Some(services) = state.services.as_ref() {
         let codex_index = codex_external_index(&state, &scope).await;
         enrich(services, codex_index.as_ref(), &mut dtos).await;

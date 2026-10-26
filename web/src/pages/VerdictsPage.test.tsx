@@ -37,6 +37,7 @@ const oneSession = [
         rationale: "fits the profile",
         verified: true,
         retracted: false,
+        pending: true,
         createdAt: "2026-07-01T00:00:00Z",
       },
     ],
@@ -51,6 +52,7 @@ const row = (id: number, title: string, extra = {}) => ({
   rationale: `${title} rationale`,
   verified: true,
   retracted: false,
+  pending: false,
   createdAt: "2026-07-01T00:00:00Z",
   ...extra,
 });
@@ -60,7 +62,7 @@ const twoSessions = [
     sessionId: "session-b",
     startedAt: "2026-07-02T00:00:00Z",
     verdicts: [
-      row(1, "Second Series"),
+      row(1, "Second Series", { pending: true }),
       row(3, "Passed Series", { tier: "pass" }),
       row(4, "Retracted Series", {
         retracted: true,
@@ -174,6 +176,43 @@ describe("VerdictsPage", () => {
     // The session is a column: on every row, not a container per session.
     expect(screen.getAllByText("session-b")).toHaveLength(3);
     expect(screen.getAllByText("session-a")).toHaveLength(1);
+  });
+
+  it("opens on pending without feedback rows and switches to settled", async () => {
+    const queries: string[] = [];
+    server.use(
+      http.get("/api/v1/verdicts", ({ request }) => {
+        const q = new URL(request.url).searchParams;
+        queries.push(q.toString());
+        return HttpResponse.json(
+          q.get("state") === "settled"
+            ? [
+                {
+                  sessionId: "session-a",
+                  startedAt: "2026-07-01T00:00:00Z",
+                  verdicts: [
+                    row(7, "Finished Series", { seriesOutcome: "loved" }),
+                  ],
+                },
+              ]
+            : twoSessions,
+        );
+      }),
+    );
+    renderWithProviders(<VerdictsPage />);
+
+    await waitFor(() =>
+      expect(queries[0]).toBe("state=pending&feedback=false"),
+    );
+    fireEvent.click(screen.getByText("Settled"));
+    // A settled recommendation shows how its series ended on its own row.
+    expect(await screen.findByText("outcome: loved")).toBeInTheDocument();
+    expect(queries.at(-1)).toBe("state=settled&feedback=false");
+
+    fireEvent.click(screen.getByLabelText("Show feedback rows"));
+    await waitFor(() => expect(queries.at(-1)).toBe("state=settled"));
+    fireEvent.click(screen.getByText("All"));
+    await waitFor(() => expect(queries.at(-1)).toBe(""));
   });
 
   it("offers an outcome only on standing recommendations", async () => {

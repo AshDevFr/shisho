@@ -35,6 +35,7 @@ function verdict(
     rationale: `${title} matches the slow-burn character work in your top-rated series, with a tighter plot than most of what you dropped.`,
     verified: true,
     retracted: false,
+    pending: false,
     createdAt: ago(days),
     title,
     coverUrl: cover(title, id),
@@ -113,13 +114,37 @@ const PROFILE = `# Taste profile
 
 // Home's view of the log above: what still stands, per series. Outcomes
 // recorded in the demo hide an entry until it is reopened.
-const settled = new Set<number>();
+const settled = new Map<number, string>();
 function standing(title: string): Verdict {
   const all = sessions.flatMap((s) => s.verdicts);
   const found = all.find((v) => v.title === title && v.outcome == null);
   if (!found) throw new Error(`demo: no verdict for ${title}`);
   return found;
 }
+// The server's per-series fold, by title (demo titles are unique per series).
+function seriesView(v: Verdict) {
+  const rows = sessions
+    .flatMap((s) => s.verdicts)
+    .filter((r) => r.title === v.title)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  let outcome: string | undefined;
+  let lastTier: string | undefined;
+  let retracted = false;
+  for (const r of rows) {
+    if (r.outcome) {
+      outcome = r.outcome === "reopened" ? undefined : r.outcome;
+      continue;
+    }
+    retracted = r.retracted;
+    if (!r.retracted) lastTier = r.tier;
+  }
+  // Outcomes recorded in the demo are the newest rows of their series.
+  outcome = rows.map((r) => settled.get(r.id)).find(Boolean) ?? outcome;
+  const pending =
+    outcome == null && !retracted && lastTier != null && lastTier !== "pass";
+  return { seriesOutcome: outcome, pending };
+}
+
 function recommendations() {
   const entry = (title: string, extra: object = {}) => ({
     verdict: standing(title),
@@ -185,13 +210,19 @@ export const demoHandlers = [
   ),
   http.get("/api/v1/verdicts", ({ request }) => {
     const q = new URL(request.url).searchParams;
+    const viewed = sessions.map((s) => ({
+      ...s,
+      verdicts: s.verdicts.map((v) => ({ ...v, ...seriesView(v) })),
+    }));
     const keep = (v: Verdict) =>
       (!q.get("tier") || v.tier === q.get("tier")) &&
-      (!q.get("outcome") || v.outcome === q.get("outcome")) &&
+      (!q.get("outcome") || v.seriesOutcome === q.get("outcome")) &&
       (!q.has("verified") || String(v.verified) === q.get("verified")) &&
-      (!q.has("retracted") || String(v.retracted) === q.get("retracted"));
+      (!q.has("retracted") || String(v.retracted) === q.get("retracted")) &&
+      (!q.get("state") || (q.get("state") === "pending") === v.pending) &&
+      (q.get("feedback") !== "false" || v.outcome == null);
     return HttpResponse.json(
-      sessions
+      viewed
         .map((s) => ({ ...s, verdicts: s.verdicts.filter(keep) }))
         .filter((s) => s.verdicts.length > 0),
     );
@@ -199,7 +230,7 @@ export const demoHandlers = [
   http.post("/api/v1/verdicts/:id/outcome", async ({ request, params }) => {
     const body = (await request.json()) as { outcome: string; notes?: string };
     if (body.outcome === "reopened") settled.delete(Number(params.id));
-    else settled.add(Number(params.id));
+    else settled.set(Number(params.id), body.outcome);
     const source = sessions
       .flatMap((s) => s.verdicts)
       .find((v) => v.id === Number(params.id));

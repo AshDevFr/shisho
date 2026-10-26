@@ -1320,11 +1320,39 @@
           {
             "name": "outcome",
             "in": "query",
-            "description": "Exact outcome match (e.g. \"loved\", \"dropped\").",
+            "description": "The series' current outcome (e.g. \"loved\", \"dropped\"): matches every\nrow of a series whose latest outcome is this, feedback row or not.",
             "required": false,
             "schema": {
               "type": [
                 "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "`pending`: rows of series still waiting on the reader (what Home\nlists). `settled`: everything else (an outcome, a pass, a retraction).\nOmitted: both.",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/LogState"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "name": "feedback",
+            "in": "query",
+            "description": "`false` hides feedback (outcome) rows; omitted or `true` keeps them.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
                 "null"
               ]
             }
@@ -1971,6 +1999,14 @@
           }
         }
       },
+      "LogState": {
+        "type": "string",
+        "description": "Whether a series still waits on the reader.",
+        "enum": [
+          "pending",
+          "settled"
+        ]
+      },
       "MangabakaHealth": {
         "type": "object",
         "description": "Backbone state: the dump is the healthy mode; API-only (dump not loaded)\nreports degraded so a first deploy knows to run the initial ingest.",
@@ -2349,6 +2385,7 @@
           "rationale",
           "verified",
           "retracted",
+          "pending",
           "createdAt"
         ],
         "properties": {
@@ -2393,6 +2430,10 @@
             ],
             "description": "The reading outcome recorded on this row (feedback rows carry it)."
           },
+          "pending": {
+            "type": "boolean",
+            "description": "Whether the series is still a standing recommendation (no outcome,\npass or retraction yet): the rows an outcome can be recorded against."
+          },
           "rationale": {
             "type": "string"
           },
@@ -2412,6 +2453,13 @@
               "null"
             ],
             "description": "Canonical `provider:id` (or `mangabaka:<id>`) when the row carries a\nseries identity, else absent."
+          },
+          "seriesOutcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The series' current outcome, folded over the whole log, so a\nrecommendation row shows how it ended without its feedback row."
           },
           "summary": {
             "type": [

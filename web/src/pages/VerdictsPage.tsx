@@ -11,6 +11,7 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Switch,
   Table,
   Text,
   TextInput,
@@ -37,13 +38,7 @@ import {
 import { formatWhen } from "@/lib/time";
 import { useUiStore } from "@/stores/ui";
 
-const TRISTATE = [
-  { value: "", label: "Any" },
-  { value: "true", label: "Yes" },
-  { value: "false", label: "No" },
-];
-
-const TIER_FILTER = ["S", "A", "B", "C", "D", "pass", "feedback"];
+const TIER_FILTER = ["S", "A", "B", "C", "D", "pass"];
 // Stored outcome values (the server normalizes what it is sent to these).
 const OUTCOME_FILTER = [
   { value: "loved", label: "Loved" },
@@ -52,8 +47,13 @@ const OUTCOME_FILTER = [
   { value: "dropped", label: "Dropped" },
   { value: "dnf", label: "Did not finish" },
   { value: "not_interested", label: "Not interested" },
-  { value: "reopened", label: "Reopened" },
   { value: "other", label: "Other" },
+];
+
+const STATES = [
+  { value: "pending", label: "Pending" },
+  { value: "settled", label: "Settled" },
+  { value: "all", label: "All" },
 ];
 
 // Structured reading outcomes; `__other__` reveals a free-text field so the
@@ -69,11 +69,12 @@ const OUTCOME_OPTIONS = [
   { value: OTHER, label: "Other…" },
 ];
 
-/// Whether an outcome can be recorded against this row: only a standing
-/// recommendation. Feedback rows are outcomes already, a pass was never a
-/// recommendation, and a retraction withdrew it.
+/// Whether an outcome can be recorded against this row: only a recommendation
+/// whose series is still pending. Feedback rows are outcomes already, a pass
+/// was never a recommendation, and a retraction withdrew it.
 function takesOutcome(v: Verdict): boolean {
   return (
+    v.pending &&
     !v.retracted &&
     v.outcome == null &&
     v.seriesId != null &&
@@ -82,12 +83,17 @@ function takesOutcome(v: Verdict): boolean {
 }
 
 /// History: the append-only recommendation log, every verdict the recommend
-/// sessions logged and every outcome since, filterable by tier / verified /
-/// retracted / outcome. Cards group by session; the table is one list with a
-/// session column. Recording an outcome appends a feedback row (the log is
-/// never mutated in place). Home shows the same log re-evaluated.
+/// sessions logged and every outcome since. It opens on what is still
+/// pending (the series Home lists); Settled holds the ones that ended, each
+/// row carrying its series' outcome, so the feedback rows that recorded those
+/// outcomes stay hidden unless asked for. Cards group by session; the table
+/// is one list with a session column. Recording an outcome appends a feedback
+/// row (the log is never mutated in place).
 export function VerdictsPage() {
-  const [filters, setFilters] = useState<VerdictFilters>({});
+  const [filters, setFilters] = useState<VerdictFilters>({
+    state: "pending",
+    feedback: false,
+  });
   const verdicts = useVerdicts(filters);
   const view = useUiStore((s) => s.verdictsView);
   const setView = useUiStore((s) => s.setVerdictsView);
@@ -117,7 +123,11 @@ export function VerdictsPage() {
       )}
 
       {verdicts.data && verdicts.data.length === 0 && (
-        <Text c="dimmed">No verdicts match these filters.</Text>
+        <Text c="dimmed">
+          {filters.state === "pending" && !filters.tier
+            ? "Nothing pending: every recommendation has an outcome."
+            : "Nothing matches these filters."}
+        </Text>
       )}
 
       {verdicts.data &&
@@ -153,13 +163,25 @@ function Filters({
   value: VerdictFilters;
   onChange: (f: VerdictFilters) => void;
 }) {
-  const triValue = (b?: boolean) =>
-    b === undefined ? "" : b ? "true" : "false";
-  const parseTri = (s: string | null) =>
-    s === "true" ? true : s === "false" ? false : undefined;
+  // A pending series has no outcome, so the Outcome filter only applies to
+  // the other two states.
+  const setState = (v: string) => {
+    const state = v === "all" ? undefined : (v as VerdictFilters["state"]);
+    onChange({
+      ...value,
+      state,
+      outcome: state === "pending" ? undefined : value.outcome,
+    });
+  };
 
   return (
-    <Group align="flex-end">
+    <Group align="flex-end" wrap="wrap">
+      <SegmentedControl
+        aria-label="Show"
+        value={value.state ?? "all"}
+        onChange={setState}
+        data={STATES}
+      />
       <Select
         label="Tier"
         placeholder="Any"
@@ -167,39 +189,30 @@ function Filters({
         value={value.tier ?? null}
         onChange={(s) => onChange({ ...value, tier: s ?? undefined })}
         clearable
-        w={130}
-      />
-      <Select
-        label="Outcome"
-        placeholder="Any"
-        data={OUTCOME_FILTER}
-        value={value.outcome ?? null}
-        onChange={(s) => onChange({ ...value, outcome: s ?? undefined })}
-        clearable
-        w={170}
-      />
-      <Select
-        label="Verified"
-        data={TRISTATE}
-        value={triValue(value.verified)}
-        onChange={(s) => onChange({ ...value, verified: parseTri(s) })}
         w={110}
       />
-      <Select
-        label="Retracted"
-        data={TRISTATE}
-        value={triValue(value.retracted)}
-        onChange={(s) => onChange({ ...value, retracted: parseTri(s) })}
-        w={110}
-      />
-      {(value.tier ||
-        value.outcome ||
-        value.verified !== undefined ||
-        value.retracted !== undefined) && (
-        <Button variant="subtle" onClick={() => onChange({})}>
-          Clear
-        </Button>
+      {value.state !== "pending" && (
+        <Select
+          label="Outcome"
+          placeholder="Any"
+          data={OUTCOME_FILTER}
+          value={value.outcome ?? null}
+          onChange={(s) => onChange({ ...value, outcome: s ?? undefined })}
+          clearable
+          w={170}
+        />
       )}
+      <Switch
+        label="Show feedback rows"
+        checked={value.feedback !== false}
+        onChange={(e) =>
+          onChange({
+            ...value,
+            feedback: e.currentTarget.checked ? undefined : false,
+          })
+        }
+        mb={8}
+      />
     </Group>
   );
 }
@@ -237,9 +250,9 @@ function StatusBadges({ verdict }: { verdict: Verdict }) {
           </Badge>
         </Tooltip>
       )}
-      {verdict.outcome && (
+      {(verdict.outcome ?? verdict.seriesOutcome) && (
         <Badge color="grape" variant="light" size="sm">
-          outcome: {verdict.outcome}
+          outcome: {verdict.outcome ?? verdict.seriesOutcome}
         </Badge>
       )}
     </>

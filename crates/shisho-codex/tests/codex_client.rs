@@ -278,7 +278,7 @@ async fn mint_api_key_sends_least_priv_scopes_and_parses_the_one_time_key() {
         .and(header("Authorization", "Bearer onboarding-token"))
         .and(body_json(serde_json::json!({
             "name": "shisho",
-            "permissions": ["series:read", "libraries:read", "books:read", "progress:read", "ratings:write"]
+            "permissions": ["series:read", "libraries:read", "books:read", "progress:read", "ratings:write", "want-to-read:write"]
         })))
         .respond_with(ResponseTemplate::new(201).set_body_json(fixture("mint_api_key")))
         .expect(1)
@@ -302,6 +302,7 @@ fn the_read_only_fallback_drops_only_the_write_scope() {
     let full: Vec<_> = SHISHO_KEY_SCOPES.iter().map(|s| s.as_str()).collect();
     let read_only: Vec<_> = SHISHO_READ_ONLY_SCOPES.iter().map(|s| s.as_str()).collect();
     assert!(full.contains(&"ratings:write"));
+    assert!(full.contains(&"want-to-read:write"));
     assert!(!read_only.iter().any(|s| s.ends_with(":write")));
     assert_eq!(
         full.iter()
@@ -404,4 +405,97 @@ async fn series_books_carry_the_callers_read_progress() {
         "2026-05-01T10:00:00+00:00"
     );
     assert!(books[1].read_progress.is_none());
+}
+
+#[tokio::test]
+async fn want_to_read_lists_the_queue_in_the_users_order() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/want-to-read"))
+        .and(query_param("sort", "custom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("want_to_read")))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let queue = client(&server)
+        .want_to_read(&api_key())
+        .await
+        .expect("queue");
+    assert_eq!(queue.items.len(), 2);
+    assert_eq!(
+        queue.items[0].series_id.as_deref(),
+        Some("550e8400-e29b-41d4-a716-446655440003")
+    );
+    assert_eq!(queue.items[0].book_id, None);
+    assert_eq!(
+        queue.items[1].book_id.as_deref(),
+        Some("550e8400-e29b-41d4-a716-446655440201")
+    );
+}
+
+#[tokio::test]
+async fn book_series_id_reads_the_books_series() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/books/b-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "b-1", "seriesId": "s-1", "title": "Vol. 1", "libraryId": "l", "libraryName": "Manga"
+        })))
+        .mount(&server)
+        .await;
+
+    let series = client(&server)
+        .book_series_id(&api_key(), "b-1")
+        .await
+        .expect("book");
+    assert_eq!(series, "s-1");
+}
+
+#[tokio::test]
+async fn add_want_to_read_bulk_adds_series() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/want-to-read/bulk"))
+        .and(body_json(
+            serde_json::json!({ "seriesIds": ["s-1", "s-2"] }),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "added": 1, "alreadyPresent": 1 })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let added = client(&server)
+        .add_want_to_read(&api_key(), &["s-1".to_owned(), "s-2".to_owned()])
+        .await
+        .expect("bulk add");
+    assert_eq!((added.added, added.already_present), (1, 1));
+}
+
+#[tokio::test]
+async fn want_to_read_removals_hit_the_series_and_book_routes() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/api/v1/want-to-read/series/s-1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/api/v1/want-to-read/books/b-1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let c = client(&server);
+    c.remove_want_to_read_series(&api_key(), "s-1")
+        .await
+        .expect("remove series");
+    c.remove_want_to_read_book(&api_key(), "b-1")
+        .await
+        .expect("remove book");
 }

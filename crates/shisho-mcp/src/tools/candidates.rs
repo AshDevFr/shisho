@@ -16,8 +16,9 @@ use shisho_services::candidates::{self, CandidatesError, Filters, Pool};
 pub struct GetCandidatesParams {
     /// Which pool: "library" (the caller's untouched backlog, primary),
     /// "acquirable" (Tsundoku catalog series the caller does not own, with
-    /// release coverage), or "discover" (MangaBaka series matching the
-    /// caller's taste that they do not own; works without Tsundoku).
+    /// release coverage), "discover" (MangaBaka series matching the
+    /// caller's taste that they do not own; works without Tsundoku), or
+    /// "wantToRead" (the caller's Codex want-to-read queue, graded).
     pub pool: Pool,
     /// Any-of genre filter, case-insensitive.
     #[serde(default)]
@@ -29,7 +30,7 @@ pub struct GetCandidatesParams {
     #[serde(default)]
     pub status: Option<String>,
     /// Codex libraries to draw from, by name or ID (see list_libraries);
-    /// empty = all. Library pool only. Ownership exclusion always spans
+    /// empty = all. Library and wantToRead pools only. Ownership exclusion always spans
     /// every library regardless of this scope.
     #[serde(default)]
     pub libraries: Vec<String>,
@@ -51,7 +52,7 @@ impl McpService {
     #[tool(
         name = "get_candidates",
         annotations(read_only_hint = true, open_world_hint = true),
-        description = "Generate recommendation candidates from one of three pools: 'library' (series the caller owns but has never read - the primary pool), 'acquirable' (well-rated Tsundoku catalog series the caller does not own), or 'discover' (MangaBaka series matching the caller's taste that they do not own, manga/manhwa/manhua only). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded. Library and discover candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Pornographic-rated series are excluded unless 'allowExplicit' is set; 'contentRating' shows the rating of the rest. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
+        description = "Generate recommendation candidates from one of four pools: 'library' (series the caller owns but has never read - the primary pool), 'acquirable' (well-rated Tsundoku catalog series the caller does not own), 'discover' (MangaBaka series matching the caller's taste that they do not own, manga/manhwa/manhua only), or 'wantToRead' (every series in the caller's Codex want-to-read queue, to grade it). Candidates are pre-filtered: owned titles never appear in 'acquirable', and series with a non-retracted verdict are excluded (except in 'wantToRead', which keeps the whole queue; there 'queue' gives each series' position in the caller's own order, and 'blockedBy' flags a series a profile hard filter would otherwise hide). Library, wantToRead and discover candidates are ranked by affinity to the caller's own ratings and completed series: 'score' orders them and 'because' names the caller's series each one resembles, with the shared genres/tags (cite these; never invent ratings). Use 'offset' to page when 'truncated' is true. Pornographic-rated series are excluded unless 'allowExplicit' is set; 'contentRating' shows the rating of the rest. Over-provisions so a verification pass can reject candidates; check 'asOf' to phrase data freshness honestly. 'enrichment' names the metadata source per candidate: 'full' (Tsundoku catalog), 'mangabaka' (the metadata backbone, where Tsundoku lacks the series), or 'none' (Codex-only - verify via web research)."
     )]
     async fn get_candidates(
         &self,
@@ -80,6 +81,9 @@ impl McpService {
 fn map_error(err: &CandidatesError) -> CallToolResult {
     match err {
         CandidatesError::Codex(swr) if swr_codex_unauthorized(swr) => tool_error(CODEX_KEY_REVOKED),
+        CandidatesError::WantToRead(shisho_codex::CodexError::Unauthorized { .. }) => {
+            tool_error(CODEX_KEY_REVOKED)
+        }
         other => tool_error(error_chain(other)),
     }
 }
@@ -111,6 +115,6 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        assert_eq!(values, ["library", "acquirable", "discover"]);
+        assert_eq!(values, ["library", "acquirable", "discover", "wantToRead"]);
     }
 }

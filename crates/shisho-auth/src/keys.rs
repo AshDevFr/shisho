@@ -46,7 +46,8 @@ pub enum Resource {
     Candidates,
     /// The single-series merged view (`lookup`).
     Lookup,
-    /// The caller's own library (`search_library`, `list_libraries`).
+    /// The caller's own library (`search_library`, `list_libraries`), and
+    /// their Codex want-to-read queue (`update_want_to_read`).
     Library,
     /// The recommendation verdict log (`record_verdict`, `record_feedback`).
     Verdicts,
@@ -129,6 +130,7 @@ pub const VALID_SCOPES: &[&str] = &[
     "candidates:read",
     "lookup:read",
     "library:read",
+    "library:write",
     "verdicts:read",
     "verdicts:write",
     "profile:read",
@@ -153,6 +155,10 @@ impl Scope {
     pub const LIBRARY_READ: Scope = Scope {
         resource: Resource::Library,
         action: Action::Read,
+    };
+    pub const LIBRARY_WRITE: Scope = Scope {
+        resource: Resource::Library,
+        action: Action::Write,
     };
     pub const VERDICTS_READ: Scope = Scope {
         resource: Resource::Verdicts,
@@ -187,6 +193,7 @@ impl Scope {
             Scope::CANDIDATES_READ,
             Scope::LOOKUP_READ,
             Scope::LIBRARY_READ,
+            Scope::LIBRARY_WRITE,
             Scope::VERDICTS_READ,
             Scope::VERDICTS_WRITE,
             Scope::PROFILE_READ,

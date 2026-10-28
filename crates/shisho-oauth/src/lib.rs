@@ -48,6 +48,7 @@ pub fn granted_scopes() -> Vec<Scope> {
         Scope::CANDIDATES_READ, // get_candidates
         Scope::LOOKUP_READ,     // lookup
         Scope::LIBRARY_READ,    // search_library, list_libraries
+        Scope::LIBRARY_WRITE,   // update_want_to_read
         Scope::VERDICTS_WRITE,  // record_verdict, record_feedback
         Scope::PROFILE_READ,    // get_profile, the taste-profile resource
         Scope::PROFILE_WRITE,   // propose_profile_update

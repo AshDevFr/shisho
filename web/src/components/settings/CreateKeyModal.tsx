@@ -23,7 +23,7 @@ import { type CreatedKey, useCreateApiKey } from "@/api/apiKeys";
 const SCOPE_GROUPS: { resource: string; actions: string[] }[] = [
   { resource: "candidates", actions: ["read"] },
   { resource: "lookup", actions: ["read"] },
-  { resource: "library", actions: ["read"] },
+  { resource: "library", actions: ["read", "write"] },
   { resource: "verdicts", actions: ["read", "write"] },
   { resource: "profile", actions: ["read", "write"] },
   { resource: "status", actions: ["read", "write"] },

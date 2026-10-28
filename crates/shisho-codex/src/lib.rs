@@ -282,6 +282,48 @@ struct SearchSeriesRequest<'a> {
     library_id: Option<&'a str>,
 }
 
+/// The caller's want-to-read queue (`WantToReadListResponse`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WantToReadList {
+    pub items: Vec<WantToReadEntry>,
+}
+
+/// One queue entry: exactly one of `series_id` / `book_id` is set.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WantToReadEntry {
+    pub id: String,
+    #[serde(default)]
+    pub series_id: Option<String>,
+    #[serde(default)]
+    pub book_id: Option<String>,
+    pub added_at: DateTime<Utc>,
+}
+
+/// `POST /api/v1/want-to-read/bulk` result.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WantToReadAdded {
+    /// Entries newly queued.
+    pub added: usize,
+    /// Series that were already queued.
+    pub already_present: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkAddWantToRead<'a> {
+    series_ids: &'a [String],
+}
+
+/// The one `BookDto` field Shisho needs: which series the book is in.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BookSeries {
+    series_id: String,
+}
+
 /// A Codex permission, in `resource:action` form. A closed set of exactly the
 /// scopes a Shisho-minted key needs, so the request body is compile-checked
 /// rather than stringly-typed.
@@ -303,6 +345,10 @@ pub enum Scope {
     /// 2.9.0 split this out of `series:read`; reading ratings still needs
     /// only `series:read`.
     RatingsWrite,
+    /// `want-to-read:write` — add series to and remove them from the
+    /// caller's want-to-read queue. Reading the queue needs only
+    /// `series:read`.
+    WantToReadWrite,
 }
 
 impl Scope {
@@ -314,25 +360,27 @@ impl Scope {
             Scope::BooksRead => "books:read",
             Scope::ProgressRead => "progress:read",
             Scope::RatingsWrite => "ratings:write",
+            Scope::WantToReadWrite => "want-to-read:write",
         }
     }
 }
 
 /// The least-privilege scope set for a Shisho-minted Codex key: read access
-/// to the library, plus `ratings:write` so the user can ask Shisho to write a
-/// rating back. Nothing else is writable: progress, the want-to-read queue
-/// and metadata stay out of reach.
+/// to the library, plus the two writes the user can ask Shisho for: a rating
+/// written back, and series added to or removed from the want-to-read queue.
+/// Progress, queue order and metadata stay out of reach.
 pub const SHISHO_KEY_SCOPES: &[Scope] = &[
     Scope::SeriesRead,
     Scope::LibrariesRead,
     Scope::BooksRead,
     Scope::ProgressRead,
     Scope::RatingsWrite,
+    Scope::WantToReadWrite,
 ];
 
-/// [`SHISHO_KEY_SCOPES`] without the write scope: what a mint falls back to
-/// when Codex refuses `ratings:write` (the authorizing credential lacks it, or
-/// Codex predates it), so sign-in still succeeds and only the rating push is
+/// [`SHISHO_KEY_SCOPES`] without the write scopes: what a mint falls back to
+/// when Codex refuses them (the authorizing credential lacks them, or Codex
+/// predates them), so sign-in still succeeds and only the writes are
 /// unavailable.
 pub const SHISHO_READ_ONLY_SCOPES: &[Scope] = &[
     Scope::SeriesRead,
@@ -342,7 +390,7 @@ pub const SHISHO_READ_ONLY_SCOPES: &[Scope] = &[
 ];
 
 /// The oldest Codex release Shisho supports: 2.9.0 is the first to gate
-/// rating writes behind `ratings:write`.
+/// rating and want-to-read writes behind their own permissions.
 pub const MIN_CODEX_VERSION: (u64, u64, u64) = (2, 9, 0);
 
 /// Whether a Codex version string (`/api/v1/info`) meets
@@ -564,6 +612,70 @@ impl CodexClient {
         self.send(Self::authed(req, credential), &endpoint).await
     }
 
+    /// `GET /api/v1/want-to-read?sort=custom` — the caller's queue, in the
+    /// order they arranged it.
+    pub async fn want_to_read(
+        &self,
+        credential: &CodexCredential,
+    ) -> Result<WantToReadList, CodexError> {
+        let endpoint = "/api/v1/want-to-read";
+        let req = self.get(endpoint)?.query(&[("sort", "custom")]);
+        self.send(Self::authed(req, credential), endpoint).await
+    }
+
+    /// `GET /api/v1/books/{id}` — the series a book belongs to (a queue entry
+    /// can flag a single book).
+    pub async fn book_series_id(
+        &self,
+        credential: &CodexCredential,
+        book_id: &str,
+    ) -> Result<String, CodexError> {
+        let endpoint = format!("/api/v1/books/{book_id}");
+        let req = self.get(&endpoint)?;
+        let book: BookSeries = self.send(Self::authed(req, credential), &endpoint).await?;
+        Ok(book.series_id)
+    }
+
+    /// `POST /api/v1/want-to-read/bulk` — queue series. Already-queued series
+    /// are counted, not errors. Needs `want-to-read:write`.
+    pub async fn add_want_to_read(
+        &self,
+        credential: &CodexCredential,
+        series_ids: &[String],
+    ) -> Result<WantToReadAdded, CodexError> {
+        let endpoint = "/api/v1/want-to-read/bulk";
+        let req = self.post(endpoint)?.json(&BulkAddWantToRead { series_ids });
+        self.send(Self::authed(req, credential), endpoint).await
+    }
+
+    /// `DELETE /api/v1/want-to-read/series/{id}` — unqueue a series entry (a
+    /// no-op when it was not queued). Needs `want-to-read:write`.
+    pub async fn remove_want_to_read_series(
+        &self,
+        credential: &CodexCredential,
+        series_id: &str,
+    ) -> Result<(), CodexError> {
+        let endpoint = format!("/api/v1/want-to-read/series/{series_id}");
+        let req = self.delete(&endpoint)?;
+        self.checked(Self::authed(req, credential), &endpoint)
+            .await
+            .map(drop)
+    }
+
+    /// `DELETE /api/v1/want-to-read/books/{id}` — unqueue a book entry.
+    /// Needs `want-to-read:write`.
+    pub async fn remove_want_to_read_book(
+        &self,
+        credential: &CodexCredential,
+        book_id: &str,
+    ) -> Result<(), CodexError> {
+        let endpoint = format!("/api/v1/want-to-read/books/{book_id}");
+        let req = self.delete(&endpoint)?;
+        self.checked(Self::authed(req, credential), &endpoint)
+            .await
+            .map(drop)
+    }
+
     /// `POST /api/v1/api-keys` — mint a new, least-privilege Codex API key for
     /// Shisho's own use, authorized by the onboarding credential (a pasted
     /// `api-keys:write` key or a one-shot forwarded OIDC bearer). Codex returns
@@ -595,6 +707,10 @@ impl CodexClient {
 
     fn put(&self, path: &str) -> Result<reqwest::RequestBuilder, CodexError> {
         Ok(self.http.put(self.url(path)?))
+    }
+
+    fn delete(&self, path: &str) -> Result<reqwest::RequestBuilder, CodexError> {
+        Ok(self.http.delete(self.url(path)?))
     }
 
     fn url(&self, path: &str) -> Result<String, CodexError> {

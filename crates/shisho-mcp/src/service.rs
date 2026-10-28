@@ -36,8 +36,10 @@ const INSTRUCTIONS: &str = "Shisho is a library-aware manga recommendation servi
 caller's own Codex library. Use get_candidates for recommendation pools, lookup/search_library \
 for series details, list_libraries to scope a session, record_verdict to log every \
 recommendation decision, record_feedback for reading outcomes, reconcile to pick up outcomes the \
-user set in Codex (ratings, stalled reads), get_profile/propose_profile_update for the taste \
-profile, and status to qualify data freshness. The recommend and consolidate \
+user set in Codex (ratings, stalled reads), get_candidates with pool wantToRead and \
+update_want_to_read to grade and edit the user's Codex want-to-read queue, \
+get_profile/propose_profile_update for the taste profile, and status to qualify data \
+freshness. The recommend and consolidate \
 prompts encode the full workflows.";
 
 #[derive(Clone)]
@@ -59,7 +61,8 @@ impl McpService {
                 + Self::verdicts_router()
                 + Self::profile_router()
                 + Self::reconcile_router()
-                + Self::status_router(),
+                + Self::status_router()
+                + Self::want_to_read_router(),
             prompt_router: Self::prompt_router(),
         }
     }
@@ -151,6 +154,7 @@ pub(crate) fn required_scope(tool: &str) -> Option<Scope> {
         "get_candidates" => Some(Scope::CANDIDATES_READ),
         "lookup" => Some(Scope::LOOKUP_READ),
         "list_libraries" | "search_library" => Some(Scope::LIBRARY_READ),
+        "update_want_to_read" => Some(Scope::LIBRARY_WRITE),
         "record_verdict" | "record_feedback" | "reconcile" => Some(Scope::VERDICTS_WRITE),
         "get_profile" => Some(Scope::PROFILE_READ),
         "propose_profile_update" => Some(Scope::PROFILE_WRITE),
@@ -264,7 +268,7 @@ mod tests {
         client_with_state(state, local(Scope::all())).await
     }
 
-    const ALL_TOOLS: [&str; 10] = [
+    const ALL_TOOLS: [&str; 11] = [
         "get_candidates",
         "get_profile",
         "list_libraries",
@@ -275,6 +279,7 @@ mod tests {
         "record_verdict",
         "search_library",
         "status",
+        "update_want_to_read",
     ];
 
     #[tokio::test]
@@ -362,22 +367,29 @@ mod tests {
             "propose_profile_update",
             "reconcile",
         ];
+        // Writers that can drop data the user has elsewhere: a client should
+        // gate these hardest.
+        let destructive = ["update_want_to_read"];
 
         let state = test_state(Default::default()).await;
         let service = McpService::new(state, local(Scope::all()));
         for tool in service.tools() {
             let hint = tool.annotations.as_ref().and_then(|a| a.read_only_hint);
+            let destructive_hint = tool.annotations.as_ref().and_then(|a| a.destructive_hint);
             let name = tool.name.as_ref();
             if read_only.contains(&name) {
                 assert_eq!(hint, Some(true), "{name} should be read-only");
             } else if writes.contains(&name) {
                 assert_eq!(hint, Some(false), "{name} should be a write");
-                // Our writers are append-only, never destructive.
+                // These writers are append-only, never destructive.
                 assert_eq!(
-                    tool.annotations.as_ref().and_then(|a| a.destructive_hint),
+                    destructive_hint,
                     Some(false),
                     "{name} must not be marked destructive"
                 );
+            } else if destructive.contains(&name) {
+                assert_eq!(hint, Some(false), "{name} should be a write");
+                assert_eq!(destructive_hint, Some(true), "{name} should be destructive");
             } else {
                 panic!("tool {name} is not classified read-only or write");
             }

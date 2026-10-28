@@ -47,25 +47,33 @@ needs the same permissions:
 | `books:read` | per-book read progress of recommended series, to notice a stalled read |
 | `progress:read` | the same progress data; held so stall checks keep working if Codex gates it separately |
 | `ratings:write` | writing a rating and notes back to Codex, only when you ask (`record_feedback` with `pushToCodex`) |
+| `want-to-read:write` | adding series to and removing them from your want-to-read queue, only when you ask (`update_want_to_read`) |
 
-`ratings:write` is the only write permission Shisho asks for. It never
-changes reading progress, the want-to-read queue, or metadata, and it never
-replaces a different rating or notes already in Codex unless told to
-overwrite (Codex keeps no rating history).
+These two are the only write permissions Shisho asks for. It never changes
+reading progress, queue order, or metadata, never queues a series that is
+not already in your Codex library, and never replaces a different rating or
+notes already in Codex unless told to overwrite (Codex keeps no rating
+history). Grading the queue (`get_candidates` with pool `wantToRead`) only
+reads, under `series:read`.
 
 Without `books:read` and `progress:read` everything else works; Shisho only
 skips recording stalled reads as abandoned. Without `ratings:write` Shisho
-still records your outcome, and reports that the rating did not reach Codex.
+still records your outcome, and reports that the rating did not reach Codex;
+without `want-to-read:write`, queue edits are reported as failed.
 
 The key that authorizes the mint (your sign-in, or a pasted key with
 `api-keys:write`) must itself hold every permission granted. If it cannot
-grant `ratings:write`, Shisho mints a read-only key instead of failing
-sign-in.
+grant the write permissions, Shisho mints a read-only key instead of
+failing sign-in.
 
 A key minted before a permission was added keeps its old set. That includes
-every key minted before Shisho asked for `ratings:write`: regenerate it from
-the Codex key panel on the Status page, or add the permission to the key in
-Codex.
+every key minted before Shisho asked for `ratings:write` and
+`want-to-read:write`: regenerate it from the Codex key panel on the Status
+page, or add the permissions to the key in Codex.
+
+Editing the queue from an MCP client also needs the Shisho scope
+`library:write`. A claude.ai connector authorized before that scope existed
+does not hold it: disconnect and reconnect the connector once.
 
 ## Common commands
 

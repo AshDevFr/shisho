@@ -67,10 +67,10 @@ pub async fn mint_and_store(
 ) -> Result<String, IdentityError> {
     // 1. Mint the narrow key. The scope set is fixed (`SHISHO_KEY_SCOPES`);
     //    it is never derived from the caller's permissions. Codex refuses the
-    //    whole mint when the authorizing credential cannot grant
-    //    `ratings:write` (403) or does not know it (400, before 2.9.0); the
-    //    rating push is an optional extra, so retry read-only rather than
-    //    fail sign-in over it.
+    //    whole mint when the authorizing credential cannot grant a write scope
+    //    (403) or does not know it (400, before 2.9.0); the writes are
+    //    optional extras, so retry read-only rather than fail sign-in over
+    //    them.
     let minted = match codex.mint_api_key(authz, key_name, SHISHO_KEY_SCOPES).await {
         Ok(minted) => minted,
         Err(CodexError::Api { status, body, .. }) if matches!(status.as_u16(), 400 | 403) => {
@@ -78,7 +78,7 @@ pub async fn mint_and_store(
                 user_id,
                 %status,
                 body,
-                "Codex refused ratings:write; minting a read-only key, so rating pushes are unavailable"
+                "Codex refused the write scopes; minting a read-only key, so rating and want-to-read writes are unavailable"
             );
             codex
                 .mint_api_key(authz, key_name, SHISHO_READ_ONLY_SCOPES)

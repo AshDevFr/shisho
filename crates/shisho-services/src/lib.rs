@@ -23,6 +23,7 @@ pub mod tuning;
 pub mod user_pass;
 pub mod verdict_views;
 pub mod verdicts;
+pub mod want_to_read;
 
 use std::sync::Arc;
 use std::time::Duration;

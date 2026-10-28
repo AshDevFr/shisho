@@ -1602,3 +1602,60 @@ async fn the_library_pool_ranks_with_the_users_own_tuned_parameters() {
     .unwrap();
     assert_eq!(top(db).await, "Loved lu");
 }
+
+#[tokio::test]
+async fn want_to_read_pool_grades_the_whole_queue() {
+    let codex = MockServer::start().await;
+    let tsundoku = MockServer::start().await;
+    let db = fresh_db().await;
+    mount_codex_library(&codex).await;
+    // Queue: a read series, a book of a verdicted series, then Frieren.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/want-to-read"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {"id": "e-1", "itemType": "series", "seriesId": "lib-e", "addedAt": "2026-10-01T00:00:00Z"},
+                {"id": "e-2", "itemType": "book", "bookId": "book-c1", "addedAt": "2026-10-02T00:00:00Z"},
+                {"id": "e-3", "itemType": "series", "seriesId": "lib-a", "addedAt": "2026-10-03T00:00:00Z"}
+            ],
+            "total": 3
+        })))
+        .mount(&codex)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/books/book-c1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"id": "book-c1", "seriesId": "lib-c"})),
+        )
+        .mount(&codex)
+        .await;
+    seed_verdict(&db, None, Some(("mangaupdates", "777")), false).await;
+
+    let set = get_candidates(
+        &services(&codex, &tsundoku, db),
+        &user(),
+        Pool::WantToRead,
+        &Filters::default(),
+    )
+    .await
+    .expect("want-to-read pool");
+
+    // Read and verdicted series stay: the caller queued them. Unqueued
+    // backlog (lib-b, lib-d) does not appear.
+    let mut placed: Vec<(&str, usize)> = set
+        .candidates
+        .iter()
+        .map(|c| (c.title.as_str(), c.queue.expect("queue place").position))
+        .collect();
+    placed.sort_by_key(|(_, position)| *position);
+    assert_eq!(
+        placed,
+        vec![
+            ("Already Read", 1),
+            ("Verdicted By Pair", 2),
+            ("Sousou no Frieren", 3)
+        ]
+    );
+    assert_eq!(set.pool, Pool::WantToRead);
+}

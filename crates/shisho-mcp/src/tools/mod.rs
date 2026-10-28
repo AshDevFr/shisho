@@ -18,6 +18,7 @@ pub mod profile;
 pub mod reconcile;
 pub mod status;
 pub mod verdicts;
+pub mod want_to_read;
 
 use rmcp::ErrorData;
 use rmcp::model::{CallToolResult, ContentBlock};

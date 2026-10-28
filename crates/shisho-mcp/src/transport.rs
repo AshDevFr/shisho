@@ -119,7 +119,7 @@ mod tests {
         );
 
         let tools = client.list_tools(Default::default()).await.unwrap();
-        assert_eq!(tools.tools.len(), 10);
+        assert_eq!(tools.tools.len(), 11);
         client.cancel().await.unwrap();
     }
 
@@ -256,7 +256,7 @@ mod tests {
 
         // Listing tools is not scope-gated: a read key sees the whole registry.
         let tools = client.list_tools(Default::default()).await.unwrap();
-        assert_eq!(tools.tools.len(), 10);
+        assert_eq!(tools.tools.len(), 11);
 
         // A write tool it lacks the scope for is refused per tool, before dispatch.
         let err = client
@@ -314,7 +314,7 @@ mod tests {
         let client = http_client(&base, &token).await;
 
         let tools = client.list_tools(Default::default()).await.unwrap();
-        assert_eq!(tools.tools.len(), 10);
+        assert_eq!(tools.tools.len(), 11);
         client.cancel().await.unwrap();
     }
 

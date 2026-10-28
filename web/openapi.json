@@ -2218,6 +2218,7 @@
           "candidates:read",
           "lookup:read",
           "library:read",
+          "library:write",
           "verdicts:read",
           "verdicts:write",
           "profile:read",

@@ -1,4 +1,4 @@
-//! `get_candidates`: the two candidate pools.
+//! `get_candidates`: the candidate pools.
 //!
 //! **Invariant: ownership is always per-user and always Codex-authoritative.**
 //! Every candidate in every pool is anti-joined against the caller's own
@@ -14,6 +14,8 @@
 //! - **acquirable** (Tier 1): Tsundoku catalog (`kind=manga`,
 //!   `hasReleases=true`, rating-sorted) → mandatory anti-join → verdict
 //!   subtraction → coverage spans attached.
+//! - **wantToRead**: the caller's Codex want-to-read queue → ranked like the
+//!   library pool, with nothing subtracted, so the whole queue is graded.
 //!
 //! Pools over-provision (default 40, 30-50 band) and set `truncated` when
 //! more candidates existed than were returned.
@@ -103,6 +105,9 @@ pub enum Pool {
     Acquirable,
     // MangaBaka dump series matching the caller's taste, minus owned.
     Discover,
+    // The caller's Codex want-to-read queue, graded.
+    #[serde(rename = "wantToRead")]
+    WantToRead,
 }
 
 impl Pool {
@@ -111,6 +116,7 @@ impl Pool {
             Pool::Library => "library",
             Pool::Acquirable => "acquirable",
             Pool::Discover => "discover",
+            Pool::WantToRead => "wantToRead",
         }
     }
 }
@@ -232,6 +238,23 @@ pub struct Candidate {
     /// tags shared.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub because: Vec<Anchor>,
+    /// Where the series sits in the caller's want-to-read queue (wantToRead
+    /// pool only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue: Option<QueuePlace>,
+    /// The genre or tag a profile hard filter blocks (wantToRead pool only:
+    /// queued series are graded, so a blocked one is flagged, not hidden).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_by: Option<String>,
+}
+
+/// A series' place in the caller's want-to-read queue.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuePlace {
+    /// 1-based, in the caller's own queue order.
+    pub position: usize,
+    pub added_at: DateTime<Utc>,
 }
 
 /// Per-source data ages, so the model can phrase staleness honestly.
@@ -291,6 +314,9 @@ pub enum CandidatesError {
          use pool=library or pool=acquirable"
     )]
     DiscoverUnavailable,
+    /// The caller's want-to-read queue could not be read from Codex.
+    #[error("reading the want-to-read queue from Codex failed")]
+    WantToRead(#[source] CodexError),
     #[error("verdict query failed")]
     Db(#[from] sea_orm::DbErr),
 }
@@ -311,6 +337,7 @@ pub async fn get_candidates(
         Pool::Library => library_pool(services, user, filters).await,
         Pool::Acquirable => acquirable_pool(services, user, filters).await,
         Pool::Discover => discover_pool(services, user, filters).await,
+        Pool::WantToRead => want_to_read_pool(services, user, filters).await,
     }
 }
 
@@ -327,25 +354,7 @@ async fn library_pool(
         .map_err(CandidatesError::Codex)?;
     let snapshot = snapshot_hit.value;
     let verdicts = VerdictIndex::load(&services.db, &user.user_sub).await?;
-
-    // Library scoping is a query-time filter only; the snapshot (and the
-    // owned anti-join) always spans every library.
-    if !filters.libraries.is_empty() {
-        let unmatched = library_snapshot::unmatched_selectors(&snapshot, &filters.libraries);
-        if !unmatched.is_empty() {
-            return Err(CandidatesError::UnknownLibraries {
-                selectors: unmatched,
-                available: snapshot.library_names(),
-            });
-        }
-    }
-    let in_selected_libraries = |s: &SnapshotSeries| {
-        filters.libraries.is_empty()
-            || filters
-                .libraries
-                .iter()
-                .any(|sel| library_snapshot::selector_matches(sel, &s.library_id, &s.library_name))
-    };
+    check_libraries(&snapshot, filters)?;
 
     // "Never read" means no copy of the series was ever opened or rated.
     // Chapter and volume editions are separate Codex series sharing external
@@ -368,7 +377,7 @@ async fn library_pool(
     let eligible: Vec<&SnapshotSeries> = snapshot
         .series
         .iter()
-        .filter(|s| in_selected_libraries(s))
+        .filter(|s| in_selected_libraries(filters, s))
         .filter(|s| s.read_state == ReadState::Untouched && s.rating.is_none())
         .filter(|s| !verdicts.excludes(&s.external_ids))
         .filter(|s| {
@@ -383,11 +392,111 @@ async fn library_pool(
         })
         .collect();
 
-    // Rank the whole eligible backlog from the snapshot's own genres and tags
-    // (no backend calls), then enrich only as far as the requested page.
-    // Ties, and every series on a cold start, keep the library's own order.
-    let taste = taste_for(services, &user.user_sub, &snapshot).await;
-    let library = by_mangabaka_id(&snapshot);
+    Ok(rank_owned(
+        services,
+        user,
+        filters,
+        &snapshot,
+        snapshot_hit.as_of,
+        eligible,
+        Pool::Library,
+    )
+    .await)
+}
+
+/// Library scoping is a query-time filter only; the snapshot (and the owned
+/// anti-join) always spans every library. A selector that matches nothing
+/// is an error, never a silently empty pool.
+fn check_libraries(
+    snapshot: &library_snapshot::LibrarySnapshot,
+    filters: &Filters,
+) -> Result<(), CandidatesError> {
+    if filters.libraries.is_empty() {
+        return Ok(());
+    }
+    let unmatched = library_snapshot::unmatched_selectors(snapshot, &filters.libraries);
+    if unmatched.is_empty() {
+        return Ok(());
+    }
+    Err(CandidatesError::UnknownLibraries {
+        selectors: unmatched,
+        available: snapshot.library_names(),
+    })
+}
+
+fn in_selected_libraries(filters: &Filters, s: &SnapshotSeries) -> bool {
+    filters.libraries.is_empty()
+        || filters
+            .libraries
+            .iter()
+            .any(|sel| library_snapshot::selector_matches(sel, &s.library_id, &s.library_name))
+}
+
+/// The caller's want-to-read queue, graded: every queued series in their
+/// library, ranked by affinity like the library pool. Unlike that pool,
+/// nothing is subtracted (read, rated or already-judged series stay, since
+/// the caller queued them) and the profile's hard filters flag a series
+/// (`blockedBy`) instead of hiding it. Each candidate carries its place in
+/// the queue, so the grade can be compared with the caller's own order.
+async fn want_to_read_pool(
+    services: &Services,
+    user: &UserCtx,
+    filters: &Filters,
+) -> Result<CandidateSet, CandidatesError> {
+    let codex = services.snapshots.codex();
+    let (snapshot_hit, queue) = tokio::join!(
+        services.snapshots.get(&user.user_sub, &user.credential),
+        crate::want_to_read::load(codex, &user.credential),
+    );
+    let snapshot_hit = snapshot_hit.map_err(CandidatesError::Codex)?;
+    let queue = queue.map_err(CandidatesError::WantToRead)?;
+    let snapshot = snapshot_hit.value;
+    check_libraries(&snapshot, filters)?;
+
+    let queued: Vec<&SnapshotSeries> = queue
+        .series
+        .iter()
+        .filter_map(|q| snapshot.series_by_uuid(&q.codex_series_id))
+        .filter(|s| in_selected_libraries(filters, s))
+        .collect();
+
+    let mut set = rank_owned(
+        services,
+        user,
+        filters,
+        &snapshot,
+        snapshot_hit.as_of,
+        queued,
+        Pool::WantToRead,
+    )
+    .await;
+    for candidate in &mut set.candidates {
+        candidate.queue = candidate
+            .codex_series_id
+            .as_deref()
+            .and_then(|id| queue.get(id))
+            .map(|q| QueuePlace {
+                position: q.position,
+                added_at: q.added_at,
+            });
+    }
+    Ok(set)
+}
+
+/// Rank owned series by affinity from the snapshot's own genres and tags (no
+/// backend calls), then enrich only as far as the requested page. Ties, and
+/// every series on a cold start, keep the input order.
+async fn rank_owned(
+    services: &Services,
+    user: &UserCtx,
+    filters: &Filters,
+    snapshot: &library_snapshot::LibrarySnapshot,
+    library_as_of: DateTime<Utc>,
+    eligible: Vec<&SnapshotSeries>,
+    pool: Pool,
+) -> CandidateSet {
+    let taste = taste_for(services, &user.user_sub, snapshot).await;
+    let library = by_mangabaka_id(snapshot);
     let eligible_ids: Vec<i64> = eligible
         .iter()
         .filter_map(|s| mangabaka_id(s.external_ids.iter()))
@@ -442,11 +551,13 @@ async fn library_pool(
         .collect();
     let mut enriched = stream::iter(pending).buffered(FAN_OUT);
 
-    while let Some((candidate, as_of)) = enriched.next().await {
+    while let Some((mut candidate, as_of)) = enriched.next().await {
         if let Some(as_of) = as_of {
             tsundoku_as_of = oldest(tsundoku_as_of, as_of);
         }
-        if filters.gates_out(&candidate)
+        // A queued series is graded even when a hard filter would hide it.
+        let gated = pool != Pool::WantToRead && filters.gates_out(&candidate);
+        if gated
             || !filters.matches(
                 &candidate.genres,
                 &candidate.tags,
@@ -454,6 +565,12 @@ async fn library_pool(
             )
         {
             continue;
+        }
+        if pool == Pool::WantToRead {
+            candidate.blocked_by = filters
+                .profile
+                .blocks(&candidate.genres, &candidate.tags)
+                .map(str::to_owned);
         }
         if skip > 0 {
             skip -= 1;
@@ -474,15 +591,15 @@ async fn library_pool(
         compact(candidate, Some(&taste));
     }
 
-    Ok(CandidateSet {
-        pool: Pool::Library,
+    CandidateSet {
+        pool,
         candidates,
         as_of: AsOf {
-            library: Some(snapshot_hit.as_of),
+            library: Some(library_as_of),
             tsundoku: tsundoku_as_of,
         },
         truncated,
-    })
+    }
 }
 
 /// The Tier 1 pool: Tsundoku's catalog minus everything the caller owns,
@@ -977,6 +1094,8 @@ fn dump_candidate(meta: &SeriesMetadata, ids: &[ExternalId]) -> Candidate {
         enrichment: Enrichment::Mangabaka,
         score: None,
         because: Vec::new(),
+        queue: None,
+        blocked_by: None,
     }
 }
 
@@ -1131,6 +1250,8 @@ fn enriched_candidate(
         enrichment: Enrichment::Full,
         score: None,
         because: Vec::new(),
+        queue: None,
+        blocked_by: None,
     }
 }
 
@@ -1157,6 +1278,8 @@ fn codex_only_candidate(series: &SnapshotSeries) -> Candidate {
         enrichment: Enrichment::None,
         score: None,
         because: Vec::new(),
+        queue: None,
+        blocked_by: None,
     }
 }
 
@@ -1183,6 +1306,8 @@ fn catalog_candidate(detail: &SeriesDetail, external_ids: &[ExternalId]) -> Cand
         enrichment: Enrichment::Full,
         score: None,
         because: Vec::new(),
+        queue: None,
+        blocked_by: None,
     }
 }
 
@@ -1395,6 +1520,6 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        assert_eq!(values, ["library", "acquirable", "discover"]);
+        assert_eq!(values, ["library", "acquirable", "discover", "wantToRead"]);
     }
 }

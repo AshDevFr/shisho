@@ -32,6 +32,7 @@ function rec(id: number, title: string, tier: string, extra = {}) {
       rationale: `${title} fits the profile`,
       verified: true,
       retracted: false,
+      pending: true,
       createdAt: "2026-10-20T00:00:00Z",
     },
     timesRecommended: 1,

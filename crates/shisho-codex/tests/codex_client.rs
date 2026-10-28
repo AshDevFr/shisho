@@ -1,7 +1,10 @@
 //! Codex client fixture tests: recorded response bodies under
 //! `tests/fixtures/codex/` replayed through wiremock. No live calls.
 
-use shisho_codex::{CodexClient, CodexCredential, CodexError, SHISHO_KEY_SCOPES, SetRating};
+use shisho_codex::{
+    CodexClient, CodexCredential, CodexError, SHISHO_KEY_SCOPES, SHISHO_READ_ONLY_SCOPES,
+    SetRating, version_supported,
+};
 use shisho_ids::Provider;
 use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -275,7 +278,7 @@ async fn mint_api_key_sends_least_priv_scopes_and_parses_the_one_time_key() {
         .and(header("Authorization", "Bearer onboarding-token"))
         .and(body_json(serde_json::json!({
             "name": "shisho",
-            "permissions": ["series:read", "libraries:read", "books:read", "progress:read"]
+            "permissions": ["series:read", "libraries:read", "books:read", "progress:read", "ratings:write"]
         })))
         .respond_with(ResponseTemplate::new(201).set_body_json(fixture("mint_api_key")))
         .expect(1)
@@ -294,11 +297,58 @@ async fn mint_api_key_sends_least_priv_scopes_and_parses_the_one_time_key() {
     assert!(minted.expires_at.is_none());
 }
 
-/// Guard that `set_series_rating` remains a valid client call. It is not wired
-/// into the service layer yet (rating-write stays dormant until Codex gates it
-/// under its own permission), but the client must still be able to make it.
+#[test]
+fn the_read_only_fallback_drops_only_the_write_scope() {
+    let full: Vec<_> = SHISHO_KEY_SCOPES.iter().map(|s| s.as_str()).collect();
+    let read_only: Vec<_> = SHISHO_READ_ONLY_SCOPES.iter().map(|s| s.as_str()).collect();
+    assert!(full.contains(&"ratings:write"));
+    assert!(!read_only.iter().any(|s| s.ends_with(":write")));
+    assert_eq!(
+        full.iter()
+            .filter(|s| !s.ends_with(":write"))
+            .collect::<Vec<_>>(),
+        read_only.iter().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn codex_versions_are_checked_against_the_minimum() {
+    assert_eq!(version_supported("2.9.0"), Some(true));
+    assert_eq!(version_supported("2.10.1"), Some(true));
+    assert_eq!(version_supported("3.0.0-rc.1"), Some(true));
+    assert_eq!(version_supported("v2.9.0"), Some(true));
+    assert_eq!(version_supported("2.8.1"), Some(false));
+    assert_eq!(version_supported("1.99.0"), Some(false));
+    assert_eq!(version_supported("dev"), None);
+}
+
 #[tokio::test]
-async fn set_series_rating_is_available_on_the_client() {
+async fn a_403_reads_as_forbidden() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/api/v1/series/s-1/rating"))
+        .respond_with(
+            ResponseTemplate::new(403).set_body_string("Missing permission: ratings:write"),
+        )
+        .mount(&server)
+        .await;
+
+    let err = client(&server)
+        .set_series_rating(
+            &api_key(),
+            "s-1",
+            &SetRating {
+                rating: 80,
+                notes: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err:?}");
+}
+
+#[tokio::test]
+async fn set_series_rating_puts_rating_and_notes() {
     let series_id = "550e8400-e29b-41d4-a716-446655440003";
     let server = MockServer::start().await;
     Mock::given(method("PUT"))

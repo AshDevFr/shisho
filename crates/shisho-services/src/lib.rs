@@ -13,6 +13,7 @@ pub mod library_snapshot;
 pub mod lookup;
 pub mod metadata;
 pub mod profile_filters;
+pub mod ratings;
 pub mod read_state;
 pub mod recommendations;
 pub mod reconciliation;

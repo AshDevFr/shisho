@@ -11,7 +11,9 @@
 use std::time::Duration;
 
 use shisho_cache::{Freshness, SwrCache, SwrConfig};
-use shisho_codex::{CodexClient, CodexCredential, CodexError, SHISHO_KEY_SCOPES, UserCtx};
+use shisho_codex::{
+    CodexClient, CodexCredential, CodexError, SHISHO_KEY_SCOPES, SHISHO_READ_ONLY_SCOPES, UserCtx,
+};
 use shisho_db::repos::users;
 use shisho_db::repos::users::CodexCredentialError;
 use shisho_db::{DatabaseConnection, DbErr, Dek};
@@ -63,12 +65,27 @@ pub async fn mint_and_store(
     authz: &CodexCredential,
     key_name: &str,
 ) -> Result<String, IdentityError> {
-    // 1. Mint the narrow key. The scope set is fixed and read-only
-    //    (`SHISHO_KEY_SCOPES`); it is never derived from the caller's
-    //    permissions.
-    let minted = codex
-        .mint_api_key(authz, key_name, SHISHO_KEY_SCOPES)
-        .await?;
+    // 1. Mint the narrow key. The scope set is fixed (`SHISHO_KEY_SCOPES`);
+    //    it is never derived from the caller's permissions. Codex refuses the
+    //    whole mint when the authorizing credential cannot grant
+    //    `ratings:write` (403) or does not know it (400, before 2.9.0); the
+    //    rating push is an optional extra, so retry read-only rather than
+    //    fail sign-in over it.
+    let minted = match codex.mint_api_key(authz, key_name, SHISHO_KEY_SCOPES).await {
+        Ok(minted) => minted,
+        Err(CodexError::Api { status, body, .. }) if matches!(status.as_u16(), 400 | 403) => {
+            tracing::warn!(
+                user_id,
+                %status,
+                body,
+                "Codex refused ratings:write; minting a read-only key, so rating pushes are unavailable"
+            );
+            codex
+                .mint_api_key(authz, key_name, SHISHO_READ_ONLY_SCOPES)
+                .await?
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     // 2. Resolve the Codex identity with the *minted* key (not `authz`), so the
     //    stored sub matches the credential we keep.
@@ -338,6 +355,88 @@ mod tests {
             .expect("stored credential");
         assert_eq!(cred.codex_user_sub, "codex-user-42");
         assert_eq!(cred.key, "codex_dead_beef");
+    }
+
+    fn asks_for_ratings_write(req: &wiremock::Request) -> bool {
+        serde_json::from_slice::<serde_json::Value>(&req.body)
+            .ok()
+            .and_then(|b| b["permissions"].as_array().cloned())
+            .is_some_and(|p| p.iter().any(|v| v == "ratings:write"))
+    }
+
+    #[tokio::test]
+    async fn a_refused_write_scope_falls_back_to_a_read_only_key() {
+        let server = MockServer::start().await;
+        // The authorizing key cannot grant ratings:write...
+        Mock::given(method("POST"))
+            .and(path("/api/v1/api-keys"))
+            .and(asks_for_ratings_write)
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .set_body_string("You don't have permission to grant: ratings:write"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        // ...so the retry asks for the read-only set, and sign-in succeeds.
+        Mock::given(method("POST"))
+            .and(path("/api/v1/api-keys"))
+            .and(|req: &wiremock::Request| !asks_for_ratings_write(req))
+            .respond_with(ResponseTemplate::new(201).set_body_json(mint_body()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/auth/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(me_body()))
+            .mount(&server)
+            .await;
+
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([7u8; 32]);
+        let user_id = a_user(&db).await;
+        let sub = mint_and_store(
+            &codex(&server),
+            &db,
+            &dek,
+            1,
+            &user_id,
+            &CodexCredential::ApiKey("read-only-onboarding-key".into()),
+            "shisho",
+        )
+        .await
+        .expect("mint falls back");
+        assert_eq!(sub, "codex-user-42");
+    }
+
+    #[tokio::test]
+    async fn a_rejected_authorization_is_not_retried() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/api-keys"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let db = connect_in_memory().await;
+        let dek = shisho_db::Dek::from_bytes([7u8; 32]);
+        let user_id = a_user(&db).await;
+        let err = mint_and_store(
+            &codex(&server),
+            &db,
+            &dek,
+            1,
+            &user_id,
+            &CodexCredential::ApiKey("revoked".into()),
+            "shisho",
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, IdentityError::Codex(CodexError::Unauthorized { .. })),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

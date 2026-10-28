@@ -32,22 +32,40 @@ make build            # builds web/dist, then `cargo build --release --features 
 
 ## Codex API key permissions
 
+Shisho requires **Codex 2.9.0 or later**, the first release that gates rating
+writes behind their own permission. An older Codex shows as degraded on the
+Status page.
+
 Shisho reads each user's library through a Codex API key. At sign-in it mints
-a dedicated key itself; a key you create by hand (for the weekly report, or
-to replace a minted one) needs the same permissions. All are read-only:
+a dedicated key itself; a key you create by hand (to replace a minted one)
+needs the same permissions:
 
 | Permission | Used for |
 |---|---|
-| `series:read` | the library snapshot: series, unread counts, external ids, ratings |
+| `series:read` | the library snapshot: series, unread counts, external ids, ratings, the want-to-read list |
 | `libraries:read` | listing and scoping libraries |
 | `books:read` | per-book read progress of recommended series, to notice a stalled read |
 | `progress:read` | the same progress data; held so stall checks keep working if Codex gates it separately |
+| `ratings:write` | writing a rating and notes back to Codex, only when you ask (`record_feedback` with `pushToCodex`) |
+
+`ratings:write` is the only write permission Shisho asks for. It never
+changes reading progress, the want-to-read queue, or metadata, and it never
+replaces a different rating or notes already in Codex unless told to
+overwrite (Codex keeps no rating history).
 
 Without `books:read` and `progress:read` everything else works; Shisho only
-skips recording stalled reads as abandoned. Shisho never asks for a write
-permission. A key minted before a permission was added keeps its old set:
-edit the key's permissions in Codex, or sign in again with a forced key
-regeneration.
+skips recording stalled reads as abandoned. Without `ratings:write` Shisho
+still records your outcome, and reports that the rating did not reach Codex.
+
+The key that authorizes the mint (your sign-in, or a pasted key with
+`api-keys:write`) must itself hold every permission granted. If it cannot
+grant `ratings:write`, Shisho mints a read-only key instead of failing
+sign-in.
+
+A key minted before a permission was added keeps its old set. That includes
+every key minted before Shisho asked for `ratings:write`: regenerate it from
+the Codex key panel on the Status page, or add the permission to the key in
+Codex.
 
 ## Common commands
 

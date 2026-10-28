@@ -54,6 +54,13 @@ pub enum CodexError {
     NotConfigured,
 }
 
+impl CodexError {
+    /// Codex refused the call for a missing permission (403).
+    pub fn is_forbidden(&self) -> bool {
+        matches!(self, CodexError::Api { status, .. } if *status == reqwest::StatusCode::FORBIDDEN)
+    }
+}
+
 /// `GET /api/v1/auth/me` — the canonical `user_sub` source.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -292,6 +299,10 @@ pub enum Scope {
     /// embeds progress today under `books:read` alone; holding this keeps
     /// stall detection working if Codex gates that progress separately.
     ProgressRead,
+    /// `ratings:write` — set the caller's series rating and notes. Codex
+    /// 2.9.0 split this out of `series:read`; reading ratings still needs
+    /// only `series:read`.
+    RatingsWrite,
 }
 
 impl Scope {
@@ -302,20 +313,51 @@ impl Scope {
             Scope::LibrariesRead => "libraries:read",
             Scope::BooksRead => "books:read",
             Scope::ProgressRead => "progress:read",
+            Scope::RatingsWrite => "ratings:write",
         }
     }
 }
 
-/// The least-privilege scope set for a Shisho-minted Codex key. Read-only:
-/// no Codex write permission is requested. Rating writes stay unused because
-/// Codex gates them under `series:read` (no dedicated permission); progress
-/// writes need `progress:write`, which is never requested.
+/// The least-privilege scope set for a Shisho-minted Codex key: read access
+/// to the library, plus `ratings:write` so the user can ask Shisho to write a
+/// rating back. Nothing else is writable: progress, the want-to-read queue
+/// and metadata stay out of reach.
 pub const SHISHO_KEY_SCOPES: &[Scope] = &[
     Scope::SeriesRead,
     Scope::LibrariesRead,
     Scope::BooksRead,
     Scope::ProgressRead,
+    Scope::RatingsWrite,
 ];
+
+/// [`SHISHO_KEY_SCOPES`] without the write scope: what a mint falls back to
+/// when Codex refuses `ratings:write` (the authorizing credential lacks it, or
+/// Codex predates it), so sign-in still succeeds and only the rating push is
+/// unavailable.
+pub const SHISHO_READ_ONLY_SCOPES: &[Scope] = &[
+    Scope::SeriesRead,
+    Scope::LibrariesRead,
+    Scope::BooksRead,
+    Scope::ProgressRead,
+];
+
+/// The oldest Codex release Shisho supports: 2.9.0 is the first to gate
+/// rating writes behind `ratings:write`.
+pub const MIN_CODEX_VERSION: (u64, u64, u64) = (2, 9, 0);
+
+/// Whether a Codex version string (`/api/v1/info`) meets
+/// [`MIN_CODEX_VERSION`]. Pre-release and build suffixes are ignored; `None`
+/// when the string is not a `major.minor.patch` version.
+pub fn version_supported(version: &str) -> Option<bool> {
+    let core = version.trim().trim_start_matches('v');
+    let core = core.split(['-', '+']).next()?;
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().ok());
+    let parsed = (parts.next()??, parts.next()??, parts.next()??);
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(parsed >= MIN_CODEX_VERSION)
+}
 
 /// `POST /api/v1/api-keys` request body. `permissions` is always sent
 /// explicitly: omitting it makes Codex copy the caller's (broad) permissions,
@@ -508,13 +550,9 @@ impl CodexClient {
     }
 
     /// `PUT /api/v1/series/{id}/rating` — write the caller's rating/notes
-    /// back to Codex.
-    ///
-    /// Not exercised by the service layer yet: Codex currently gates this
-    /// write under `series:read` (no dedicated rating-write permission), so a
-    /// Shisho-minted key would leak write access. The write path stays dormant
-    /// until Codex gates rating-write under its own permission and the minted
-    /// key is granted it. The method is kept so the client is complete.
+    /// back to Codex. Needs `ratings:write`; a key without it gets a 403
+    /// ([`CodexError::is_forbidden`]). Codex replaces both fields, so a `None`
+    /// `notes` clears any notes already there.
     pub async fn set_series_rating(
         &self,
         credential: &CodexCredential,

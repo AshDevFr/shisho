@@ -1,13 +1,10 @@
 //! `record_verdict` and `record_feedback`: appends to the verdict log.
 //!
 //! Feedback records the outcome on the local verdict log (consolidation
-//! evidence) and closes any reconciliation flag it answers. The Codex
-//! rating push is deferred (N-RATINGWRITE): Codex currently gates rating-write
-//! under `series:read`, so the Shisho-minted key is read-only and pushing a
-//! rating would leak write access. The ack keeps `pushedToCodex`/`codexGap`
-//! stable so re-enabling the push (once Codex separates that permission) is a
-//! one-line change; for now `pushedToCodex` is always false and a rating is
-//! recorded locally with the gap explained.
+//! evidence) and closes any reconciliation flag it answers. A rating and
+//! notes reach the user's Codex library only when the call opts in with
+//! `pushToCodex`, after the outcome is saved, so a failed push never loses
+//! the outcome: it comes back as a `codexGap` to relay.
 
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
@@ -20,11 +17,12 @@ use crate::McpService;
 use shisho_api::middleware::AuthContext;
 use shisho_db::repos::verdicts::{self, NewVerdict, RetractionReason};
 use shisho_services::lookup::parse_known_id;
+use shisho_services::ratings::{self, PushGap, PushOutcome, RatingPush};
 
-/// Why a supplied rating did not reach Codex. Recorded locally regardless.
-const RATING_DEFERRED_GAP: &str = "the rating was recorded in Shisho but not pushed to Codex: rating-write is not yet enabled \
-     for the Shisho-minted key (Codex gates it under series:read). The outcome is saved as \
-     consolidation evidence; the rating will sync once Codex separates that permission.";
+/// Why a supplied rating went nowhere: Shisho keeps no ratings of its own.
+const RATING_NOT_PUSHED_GAP: &str = "the rating was not saved: Shisho keeps ratings only in Codex, and \
+     pushToCodex was not set. Ask the user whether to write it to Codex, then retry with \
+     pushToCodex: true.";
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -92,12 +90,22 @@ pub struct RecordFeedbackParams {
     /// text kept in notes.
     pub outcome: String,
     /// Rating for the series, 1-100 (Codex displays 1-10 with one decimal).
-    /// Recorded as evidence; the Codex push is deferred (see codexGap).
+    /// Only kept when written to Codex with pushToCodex.
     #[serde(default)]
     pub rating: Option<i32>,
-    /// Free-form notes on why.
+    /// Free-form notes on why. Saved with the outcome; also written as the
+    /// Codex rating notes with pushToCodex.
     #[serde(default)]
     pub notes: Option<String>,
+    /// Write the rating and notes to the user's Codex library. Set it only
+    /// when the user asked for that.
+    #[serde(default)]
+    pub push_to_codex: bool,
+    /// With pushToCodex, replace a different rating or notes already in
+    /// Codex. Set it only after the user confirmed replacing what the
+    /// codexGap reported.
+    #[serde(default)]
+    pub overwrite_codex: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,8 +113,8 @@ pub struct RecordFeedbackParams {
 struct FeedbackAck {
     verdict_id: i64,
     outcome: String,
-    /// Whether the rating/notes reached Codex. Always false for now (the push
-    /// is deferred); the outcome is recorded locally regardless.
+    /// Whether the rating/notes reached Codex (or Codex already held them).
+    /// The outcome is recorded locally regardless.
     pushed_to_codex: bool,
     /// Why the Codex push did not happen, when a rating was supplied. Relay it
     /// to the user; the outcome above is saved either way.
@@ -184,7 +192,7 @@ impl McpService {
             destructive_hint = false,
             idempotent_hint = true
         ),
-        description = "Record the user's reading outcome for a series ('loved', 'dropped', ...). The outcome is stored on the local verdict log (consolidation evidence) and closes any open reconciliation question on the series. A rating (1-100) is recorded as evidence; pushing it to the user's Codex library is deferred, so the ack carries pushedToCodex: false plus a codexGap to relay."
+        description = "Record the user's reading outcome for a series ('loved', 'dropped', ...). The outcome and notes are stored on the local verdict log (consolidation evidence) and close any open reconciliation question on the series. To also write a rating (1-100) and the notes to the user's Codex library, set pushToCodex: true, only when the user asked for it. A different rating or notes already in Codex are not replaced unless overwriteCodex is also set: relay the codexGap and ask the user first. The ack's pushedToCodex says whether Codex holds them; codexGap says why not."
     )]
     async fn record_feedback(
         &self,
@@ -211,22 +219,64 @@ impl McpService {
             &user.user_sub,
             &external_id,
             &params.outcome,
-            params.notes,
+            params.notes.clone(),
         )
         .await
         .map_err(db_error)?;
 
-        // The Codex rating push stays deferred (N-RATINGWRITE): name the gap
-        // when a rating was supplied, but never lose the outcome.
-        let codex_gap = params.rating.map(|_| RATING_DEFERRED_GAP.to_owned());
+        let (pushed_to_codex, codex_gap) = if params.push_to_codex {
+            let push = RatingPush {
+                rating: params.rating,
+                notes: params.notes,
+                overwrite: params.overwrite_codex,
+            };
+            match self.push_rating(&user, &external_id, push).await? {
+                PushOutcome::Written { .. } | PushOutcome::Unchanged => (true, None),
+                PushOutcome::Skipped(gap) => (false, Some(gap.message())),
+            }
+        } else {
+            (
+                false,
+                params.rating.map(|_| RATING_NOT_PUSHED_GAP.to_owned()),
+            )
+        };
 
         tool_json(&FeedbackAck {
             verdict_id: ack.row.id,
             outcome: ack.row.outcome.unwrap_or_default(),
-            pushed_to_codex: false,
+            pushed_to_codex,
             codex_gap,
             reconciliation_flags_resolved: (ack.flags_resolved > 0).then_some(ack.flags_resolved),
         })
+    }
+}
+
+impl McpService {
+    /// Push a rating to Codex against the caller's library snapshot (the
+    /// series must be in it to have a Codex id to write to).
+    async fn push_rating(
+        &self,
+        user: &shisho_codex::UserCtx,
+        series: &shisho_ids::ExternalId,
+        push: RatingPush,
+    ) -> Result<PushOutcome, ErrorData> {
+        let services = self.services()?;
+        let snapshot = match services
+            .snapshots
+            .get(&user.user_sub, &user.credential)
+            .await
+        {
+            Ok(hit) => hit.value,
+            Err(err) => return Ok(PushOutcome::Skipped(PushGap::Codex(err.to_string()))),
+        };
+        Ok(ratings::push(
+            services.snapshots.codex(),
+            &user.credential,
+            &snapshot,
+            series,
+            push,
+        )
+        .await)
     }
 }
 

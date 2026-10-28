@@ -12,6 +12,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::Services;
+use shisho_codex::{CodexAppInfo, CodexError, MIN_CODEX_VERSION, version_supported};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +71,33 @@ pub struct CacheHealth {
     pub tsundoku_last_warmed_at: Option<String>,
 }
 
+/// Codex's half of the report. A reachable Codex older than
+/// [`MIN_CODEX_VERSION`] carries an error (and degrades the report): it
+/// predates `ratings:write`, so minted keys come out read-only.
+fn codex_health(info: Result<CodexAppInfo, CodexError>, configured: bool) -> BackendHealth {
+    match info {
+        Ok(info) => BackendHealth {
+            configured: true,
+            reachable: true,
+            required: true,
+            error: (version_supported(&info.version) == Some(false)).then(|| {
+                let (major, minor, patch) = MIN_CODEX_VERSION;
+                format!(
+                    "Codex {} is older than {major}.{minor}.{patch}, the minimum Shisho \
+                     supports: rating writes are unavailable",
+                    info.version
+                )
+            }),
+        },
+        Err(err) => BackendHealth {
+            configured,
+            reachable: false,
+            required: true,
+            error: Some(err.to_string()),
+        },
+    }
+}
+
 /// Probe every backend from the caller's domain handles. Never errors: an
 /// unreachable backend degrades the report.
 pub async fn probe(db: &DatabaseConnection, services: &Services) -> HealthResponse {
@@ -87,20 +115,7 @@ pub async fn probe(db: &DatabaseConnection, services: &Services) -> HealthRespon
         reachable: db_ping.is_ok(),
     };
 
-    let codex = match codex_info {
-        Ok(_) => BackendHealth {
-            configured: true,
-            reachable: true,
-            required: true,
-            error: None,
-        },
-        Err(err) => BackendHealth {
-            configured: services.snapshots.codex().is_configured(),
-            reachable: false,
-            required: true,
-            error: Some(err.to_string()),
-        },
-    };
+    let codex = codex_health(codex_info, services.snapshots.codex().is_configured());
 
     let tsundoku_configured = tsundoku.is_configured();
     let tsundoku = match tsundoku_health {
@@ -137,6 +152,7 @@ pub async fn probe(db: &DatabaseConnection, services: &Services) -> HealthRespon
     let status = if !db.reachable {
         "unavailable"
     } else if codex.reachable
+        && codex.error.is_none()
         && (tsundoku.reachable || !tsundoku.configured)
         && mangabaka.dump_loaded
     {
@@ -166,5 +182,40 @@ pub async fn probe(db: &DatabaseConnection, services: &Services) -> HealthRespon
             library_snapshot_last_warmed_at: services.snapshots.last_warm().map(|t| t.to_rfc3339()),
             tsundoku_last_warmed_at: services.tsundoku.last_warm().map(|t| t.to_rfc3339()),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn info(version: &str) -> Result<CodexAppInfo, CodexError> {
+        Ok(CodexAppInfo {
+            name: "codex".into(),
+            version: version.into(),
+        })
+    }
+
+    #[test]
+    fn a_supported_codex_is_healthy() {
+        let health = codex_health(info("2.9.0"), true);
+        assert!(health.reachable);
+        assert_eq!(health.error, None);
+    }
+
+    #[test]
+    fn an_old_codex_is_reachable_but_flagged() {
+        let health = codex_health(info("2.8.1"), true);
+        assert!(health.reachable);
+        let error = health.error.expect("old version flagged");
+        assert!(
+            error.contains("2.8.1") && error.contains("2.9.0"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn an_unparseable_version_is_not_flagged() {
+        assert_eq!(codex_health(info("dev"), true).error, None);
     }
 }

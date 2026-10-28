@@ -2,6 +2,12 @@
 
 All notable changes to shisho will be documented in this file.
 
+## [0.2.2] - 2026-10-28
+
+### Features
+
+- *(mcp)* Grade and edit the Codex want-to-read queue
+
 ## [0.2.1] - 2026-10-28
 
 ### Bug Fixes

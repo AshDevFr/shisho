@@ -701,7 +701,7 @@ export interface components {
          * @description API key permission as `resource:action`.
          * @enum {string}
          */
-        Scope: "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read" | "status:write";
+        Scope: "keys:manage" | "candidates:read" | "lookup:read" | "library:read" | "library:write" | "verdicts:read" | "verdicts:write" | "profile:read" | "profile:write" | "status:read" | "status:write";
         /** @description One recommendation session's rows, grouped together. */
         SessionGroup: {
             sessionId: string;

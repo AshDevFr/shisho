@@ -2,6 +2,13 @@
 
 All notable changes to shisho will be documented in this file.
 
+## [0.2.0] - 2026-10-28
+
+### Features
+
+- *(web)* Open History on pending recommendations and hide feedback rows
+- *(mcp)* [**breaking**] Write ratings and notes back to Codex on request
+
 ## [0.1.3] - 2026-10-25
 
 ### Features

@@ -2,6 +2,12 @@
 
 All notable changes to shisho will be documented in this file.
 
+## [0.2.1] - 2026-10-28
+
+### Bug Fixes
+
+- *(web)* Mark Home test recommendations as pending so the build type-checks
+
 ## [0.2.0] - 2026-10-28
 
 ### Features
